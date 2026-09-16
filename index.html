@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>libTiMidity asm.js Demo</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --border-color: #333;
+            --accent-color: #00ff88;
+            --text-color: #e0e0e0;
+            --slider-bg: #222;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        h1,
+        h3 {
+            margin: 0 0 15px 0;
+            color: #fff;
+            font-weight: 400;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Transport Bar */
+        .transport {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        button,
+        input[type=file]::file-selector-button {
+            background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+            border: 1px solid #000;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        button:hover:not(:disabled),
+        input[type=file]::file-selector-button:hover {
+            background: linear-gradient(180deg, #4a4a4a 0%, #3a3a3a 100%);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button:active:not(:disabled) {
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Seeker */
+        .seeker-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-grow: 1;
+        }
+
+        #seeker {
+            flex-grow: 1;
+            height: 8px;
+            -webkit-appearance: none;
+            background: var(--slider-bg);
+            border-radius: 4px;
+            outline: none;
+        }
+
+        #seeker::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            cursor: pointer;
+        }
+
+        .time-display {
+            font-family: monospace;
+            font-size: 1.1em;
+            color: var(--accent-color);
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
+        }
+
+        /* Subtitle */
+        #subtitleBox {
+            font-size: 1.5em;
+            text-align: center;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+            letter-spacing: 1px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+        }
+
+        /* Piano */
+        .piano-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        select {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .piano-container {
+            display: flex;
+            position: relative;
+            overflow-x: auto;
+            padding-bottom: 5px;
+        }
+
+        .key {
+            border: 1px solid #111;
+            box-sizing: border-box;
+            border-radius: 0 0 4px 4px;
+            cursor: default;
+        }
+
+        .key.white {
+            width: 32px;
+            height: 140px;
+            background: linear-gradient(180deg, #eee 0%, #fff 100%);
+            z-index: 1;
+            flex-shrink: 0;
+            box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .key.black {
+            width: 22px;
+            height: 90px;
+            background: linear-gradient(180deg, #333 0%, #000 100%);
+            z-index: 2;
+            margin-left: -11px;
+            margin-right: -11px;
+            flex-shrink: 0;
+            box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2);
+        }
+
+        .key.active.white {
+            background: linear-gradient(180deg, #aaffcc 0%, var(--accent-color) 100%);
+            box-shadow: 0 0 10px var(--accent-color);
+        }
+
+        .key.active.black {
+            background: linear-gradient(180deg, #008844 0%, #00aa55 100%);
+            box-shadow: 0 0 10px var(--accent-color);
+            z-index: 3;
+        }
+
+        /* Mixer */
+        .mixer-container {
+            display: flex;
+            overflow-x: auto;
+            gap: 15px;
+            padding-bottom: 10px;
+        }
+
+        .mixer-channel {
+            background: #252525;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 15px 10px;
+            width: 70px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+            flex-shrink: 0;
+        }
+
+        .mixer-channel .ch-label {
+            font-size: 0.9em;
+            font-weight: bold;
+            color: #aaa;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+
+        .vu-meter-container {
+            display: flex;
+            gap: 4px;
+            height: 100px;
+            width: 20px;
+            margin-bottom: 15px;
+            border: 1px solid #000;
+            /* The gradient is now the static background of the container */
+            background: linear-gradient(to top, #0f0 50%, #ff0 85%, #f00 100%);
+            padding: 2px;
+            position: relative;
+            /* Needed for the overlay bar */
+            overflow: hidden;
+            /* Hide the part of the bar that is "off" */
+        }
+
+        .vu-bar {
+            width: 50%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            /* Dark overlay to hide the gradient */
+            position: absolute;
+            bottom: 0;
+            transform-origin: top;
+            /* The bar will "shrink" from the top down */
+            transform: scaleY(1);
+            /* Start fully scaled (volume at 0) */
+            /* Transition removed to let JS requestAnimationFrame render smooth jitter */
+        }
+
+        .bar-left {
+            margin-right: 1px;
+        }
+
+        .bar-right {
+            margin-left: 1px;
+        }
+
+        .fader-track {
+            height: 120px;
+            display: flex;
+            align-items: center;
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        .pitch-bend-track {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        input[type=range].fader {
+            writing-mode: bt-lr;
+            /* IE */
+            -webkit-appearance: slider-vertical;
+            /* WebKit */
+            appearance: slider-vertical;
+            /* Modern */
+            width: 24px;
+            height: 120px;
+            background: #111;
+            border-radius: 4px;
+            outline: none;
+            box-shadow: inset 0 0 5px #000;
+        }
+
+        .mute-btn {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 10px;
+            padding: 4px;
+            cursor: pointer;
+            margin-bottom: 5px;
+            width: 80%;
+            text-align: center;
+        }
+
+        .mute-btn.active {
+            background-color: #e74c3c;
+            border-color: #c0392b;
+            font-weight: bold;
+        }
+
+        .solo-btn {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 10px;
+            padding: 4px;
+            cursor: pointer;
+            margin-bottom: 5px;
+            width: 80%;
+            text-align: center;
+        }
+
+        .solo-btn.active {
+            background-color: #f1c40f;
+            border-color: #f39c12;
+            color: black;
+            font-weight: bold;
+        }
+
+        .knob-track {
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .knob-label {
+            font-size: 0.7em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        input[type=range].knob {
+            width: 50px;
+        }
+
+        input[type=range].pitch-bend {
+            width: 60px;
+        }
+
+        #status {
+            font-style: italic;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+        }
+
+        .modal-content {
+            background-color: #222;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #444;
+            width: 400px;
+            border-radius: 8px;
+            color: #eee;
+        }
+
+        .modal-content h2 {
+            margin-top: 0;
+            color: #fff;
+        }
+
+        .close-btn {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-btn:hover,
+        .close-btn:focus {
+            color: #fff;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .info-table td {
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .info-table td:first-child {
+            font-weight: bold;
+            color: #aaa;
+            width: 60%;
+        }
+
+        .master-vu-container {
+            width: 200px;
+            height: 10px;
+            background: linear-gradient(to right, #0f0 50%, #ff0 85%, #f00 100%);
+            border: 1px solid #000;
+            border-radius: 2px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+
+        .master-vu-bar {
+            height: 100%;
+            width: 100%;
+            background-color: #222;
+            position: absolute;
+            right: 0;
+            top: 0;
+            transform-origin: right;
+            transform: scaleX(1);
+        }
+
+        #playPause{
+            width: 80px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="panel">
+        <div class="transport">
+            <h1>libTiMidity DAW</h1>
+            <input type="file" id="midiFile" accept=".mid,.midi">
+            <button id="playPause" disabled>Play</button>
+            <button id="stop" disabled>Stop</button>
+            <button id="renderWav" disabled>Render WAV</button>
+            <button id="exportStemsBtn" disabled>Export Stems</button>
+            <button id="songInfoBtn" disabled>Song Info</button>
+            <button id="panic" style="background-color:#e74c3c; color:white;">Panic</button>
+            <button id="free">Free Memory</button>
+            <button id="exit">Shutdown</button>
+
+            <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+                <label for="transpose">Transpose:</label>
+                <input type="range" id="transpose" min="-12" max="12" value="0" style="width: 100px;">
+                <span id="transposeValue">0</span>
+            </div>
+            <div style="margin-top: 10px;" class="seeker-container">
+                <span class="time-display" id="currentTime">00:00.000</span>
+                <input type="range" id="seeker" min="0" value="0" disabled>
+                <span class="time-display" id="totalTime">00:00.000</span>
+            </div>
+            <div style="margin-top: 10px; display: flex; align-items: center; justify-content: flex-end; gap: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 0.9em; color:#aaa;">Tick:</label>
+                    <span id="tickCounter"
+                        style="font-family: monospace; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em;">0</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 0.9em; color:#aaa;">Polyphony:</label>
+                    <span id="polyphonyCounter"
+                        style="font-family: monospace; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em;">0</span>
+                </div>
+            </div>
+            <progress id="renderProgress" value="0" max="100"
+                style="display: none; width: 100%; height: 8px; margin-top: 10px;"></progress>
+        </div>
+        <div style="margin-top: 10px;" id="status">Waiting for initialization...</div>
+    </div>
+
+    <div class="panel" id="subtitleBox"></div>
+
+    <div class="panel">
+        <div class="piano-header">
+            <h3>Piano Roll</h3>
+            <label>Monitor Track:
+                <select id="pianoChannel"></select>
+            </label>
+        </div>
+        <div id="piano" class="piano-container"></div>
+    </div>
+
+    <div class="panel">
+        <h3>Mixing Console</h3>
+        <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end;">
+            <label>
+                <input type="checkbox" id="mixerSyncToggle" checked> Sync with MIDI Events
+            </label>
+            <div
+                style="display: flex; align-items: center; gap: 15px; background: #222; padding: 10px 15px; border-radius: 6px; border: 1px solid #333;">
+                <div style="text-align: right;">
+                    <strong style="display: block; font-size: 1.1em; color: #fff;">Audio Output Level</strong>
+                    <span style="font-size: 0.8em; color: #888;">Master Volume (L/R)</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div class="master-vu-container">
+                        <div class="master-vu-bar" id="masterVuL"></div>
+                    </div>
+                    <div class="master-vu-container">
+                        <div class="master-vu-bar" id="masterVuR"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="mixer" class="mixer-container"></div>
+    </div>
+
+    <!-- Song Info Modal -->
+    <div id="infoModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" id="closeModal">&times;</span>
+            <h2>Song Information</h2>
+            <table class="info-table">
+                <tr>
+                    <td>Note Tracks</td>
+                    <td id="infoTracks">-</td>
+                </tr>
+                <tr>
+                    <td>Active Channels</td>
+                    <td id="infoChannels">-</td>
+                </tr>
+                <tr>
+                    <td>Max Tick (Samples)</td>
+                    <td id="infoMaxTick">-</td>
+                </tr>
+                <tr>
+                    <td>Duration</td>
+                    <td id="infoDuration">-</td>
+                </tr>
+                <tr>
+                    <td>Sample Rate</td>
+                    <td id="infoSampleRate">-</td>
+                </tr>
+                <tr>
+                    <td>Bit Depth</td>
+                    <td id="infoBitDepth">-</td>
+                </tr>
+                <tr>
+                    <td>Estimated PCM Size</td>
+                    <td id="infoPcmSize">-</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Export Stems Modal -->
+    <div id="stemsModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <span class="close-btn" id="closeStemsModal">&times;</span>
+            <h2>Export Audio Stems</h2>
+            <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+                <label>
+                    Sample Rate:
+                    <select id="stemSampleRate" style="width: 100%; margin-top: 5px;">
+                        <option value="44100" selected>44100 Hz</option>
+                        <option value="48000">48000 Hz</option>
+                        <option value="96000">96000 Hz</option>
+                    </select>
+                </label>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <label>
+                        <input type="checkbox" id="stemMonoToStereo"> Apply Mono-to-Stereo Widening (EQ)
+                    </label>
+                    <div id="stemMonoToStereoWeightContainer" style="display: none; align-items: center; gap: 5px;">
+                        Weight: 
+                        <input type="range" id="stemMonoToStereoWeight" min="1" max="15" value="5" style="width: 80px;">
+                        <span id="stemMonoToStereoWeightVal" style="font-size: 0.9em;">5 dB</span>
+                    </div>
+                </div>
+                <label>
+                    <input type="checkbox" id="stemIsSpatial"> Enable 3D Spatial Audio (CC 20/21)
+                </label>
+                <label>
+                    <input type="checkbox" id="stemIsSpatialInterpolation"> Enable Spatial Interpolation
+                </label>
+                <div style="max-height: 150px; overflow-y: auto; border: 1px solid #333; padding: 10px; border-radius: 4px; background: #222;" id="stemTrackList">
+                    <!-- Checkboxes will be injected here via JS -->
+                </div>
+                <button id="startStemsExport" style="margin-top: 10px; background: linear-gradient(180deg, #008844 0%, #00aa55 100%);">Start Export</button>
+                <div id="stemsStatus" style="font-size: 0.9em; color: #aaa; text-align: center;"></div>
+                <progress id="stemsProgress" value="0" max="100" style="display: none; width: 100%; height: 8px;"></progress>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h3>MIDI Controller Input</h3>
+        <div class="transport" style="gap: 20px;">
+            <button id="connectMidi">Connect to MIDI Device</button>
+            <label>Device: <select id="midiInDevices" disabled></select></label>
+            <label>Instrument: <select id="realtimeProgram"></select></label>
+            <label>Bank: <input type="number" id="realtimeBank" value="0" min="0" max="127"
+                    style="width: 50px;"></label>
+            <label>Channel: <input type="number" id="realtimeChannel" value="0" min="0" max="15"
+                    style="width: 50px;"></label>
+        </div>
+        <div style="margin-top: 10px;" id="midiStatus">Waiting for connection...</div>
+    </div>
+
+    <script>
+
+        let patchUrlBase = 'gus-patch';
+
+        let volumeControls = {};
+        let panControls = {};
+        let pbControls = {};
+        let vuLeftControls = {};
+        let vuRightControls = {};
+        let channelVelocity = {};
+
+        let player;
+
+        // --- Main Application Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const statusEl = document.getElementById("status");
+            const playPauseBtn = document.getElementById("playPause");
+            const stopBtn = document.getElementById("stop");
+            const renderWavBtn = document.getElementById("renderWav");
+            const songInfoBtn = document.getElementById("songInfoBtn");
+            const exportStemsBtn = document.getElementById("exportStemsBtn");
+            const seekerEl = document.getElementById("seeker");
+            const currentTimeEl = document.getElementById("currentTime");
+            const totalTimeEl = document.getElementById("totalTime");
+            const tickCounterEl = document.getElementById("tickCounter");
+            const renderProgress = document.getElementById("renderProgress");
+            const freeBtn = document.getElementById("free");
+            const exitBtn = document.getElementById("exit");
+            const panicBtn = document.getElementById("panic");
+            const mixerSyncToggle = document.getElementById("mixerSyncToggle");
+            const transposeEl = document.getElementById("transpose");
+            const transposeValueEl = document.getElementById("transposeValue");
+
+            // Modal Elements
+            const infoModal = document.getElementById("infoModal");
+            const closeModal = document.getElementById("closeModal");
+            
+            const stemsModal = document.getElementById("stemsModal");
+            const closeStemsModal = document.getElementById("closeStemsModal");
+            const startStemsExport = document.getElementById("startStemsExport");
+            const stemsStatus = document.getElementById("stemsStatus");
+            const stemsProgress = document.getElementById("stemsProgress");
+
+            
+            songInfoBtn.onclick = () => {
+                if (!player) return;
+                const info = player.getInfo();
+                if (info) {
+                    document.getElementById("infoTracks").textContent = info.tracks;
+                    document.getElementById("infoChannels").textContent = info.channels;
+                    document.getElementById("infoMaxTick").textContent = info.max_tick;
+                    document.getElementById("infoDuration").textContent = player.formatTime(info.duration_sec);
+                    document.getElementById("infoSampleRate").textContent = info.sample_rate + " Hz";
+                    document.getElementById("infoBitDepth").textContent = info.bit_depth + "-bit";
+                    document.getElementById("infoPcmSize").textContent = (info.pcm_size / 1024 / 1024).toFixed(2) + " MB";
+                    infoModal.style.display = "block";
+                }
+            };
+
+            closeModal.onclick = () => infoModal.style.display = "none";
+
+            exportStemsBtn.onclick = () => {
+                const trackListContainer = document.getElementById("stemTrackList");
+                trackListContainer.innerHTML = '';
+                
+                // Add Select All / Deselect All controls
+                const selectControls = document.createElement("div");
+                selectControls.style.marginBottom = "10px";
+                selectControls.style.fontSize = "13px";
+                selectControls.innerHTML = `
+                    <a href="#" id="selectAllStems" style="color: #4CAF50; text-decoration: none; margin-right: 15px;">Select All</a>
+                    <a href="#" id="deselectAllStems" style="color: #f44336; text-decoration: none;">Deselect All</a>
+                `;
+                trackListContainer.appendChild(selectControls);
+                
+                const listWrapper = document.createElement("div");
+                trackListContainer.appendChild(listWrapper);
+                
+                if (player && player.tempoMap) {
+                    const totalTracks = player.tempoMap.tracksCount || 1;
+                    const names = player.tempoMap.trackNames || [];
+                    const hasNotesList = player.tempoMap.trackHasNotes || [];
+                    let visibleTracks = 0;
+                    for (let i = 0; i < totalTracks; i++) {
+                        // Skip tracks that don't have any channel events (meta tracks)
+                        if (hasNotesList.length > i && !hasNotesList[i]) continue;
+                        
+                        visibleTracks++;
+                        const label = document.createElement("label");
+                        label.style.display = "block";
+                        label.style.marginBottom = "5px";
+                        label.style.cursor = "pointer";
+                        const cb = document.createElement("input");
+                        cb.type = "checkbox";
+                        cb.value = i;
+                        cb.checked = true; // default select all
+                        cb.className = "stem-track-cb";
+                        cb.style.marginRight = "8px";
+                        label.appendChild(cb);
+                        
+                        const trackName = names[i] || `Track ${i}`;
+                        label.appendChild(document.createTextNode(`[${i}] ${trackName}`));
+                        listWrapper.appendChild(label);
+                    }
+                    if (visibleTracks === 0) {
+                        listWrapper.innerHTML = '<span style="color:#888;">No renderable note tracks found.</span>';
+                    }
+                    
+                    document.getElementById("selectAllStems").onclick = (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('.stem-track-cb').forEach(cb => cb.checked = true);
+                    };
+                    document.getElementById("deselectAllStems").onclick = (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('.stem-track-cb').forEach(cb => cb.checked = false);
+                    };
+                } else {
+                    listWrapper.innerHTML = '<span style="color:#888;">No tracks loaded.</span>';
+                }
+                
+                stemsModal.style.display = "block";
+                stemsStatus.textContent = "";
+                stemsProgress.style.display = "none";
+            };
+
+            closeStemsModal.onclick = () => {
+                stemsModal.style.display = "none";
+            };
+
+            window.onclick = (e) => {
+                if (e.target == infoModal) infoModal.style.display = "none";
+                if (e.target == stemsModal) stemsModal.style.display = "none";
+            };
+
+            startStemsExport.onclick = async () => {
+                if (!player) return;
+                
+                const checkboxes = document.querySelectorAll('.stem-track-cb');
+                const trackList = [];
+                checkboxes.forEach(cb => {
+                    if (cb.checked) trackList.push(parseInt(cb.value));
+                });
+                
+                if (trackList.length === 0) {
+                    stemsStatus.textContent = "Please select at least one track.";
+                    return;
+                }
+                
+                const options = {
+                    sampleRate: parseInt(document.getElementById("stemSampleRate").value),
+                    monoToStereo: document.getElementById("stemMonoToStereo").checked,
+                    monoToStereoWeight: parseInt(document.getElementById("stemMonoToStereoWeight").value),
+                    isSpatial: document.getElementById("stemIsSpatial").checked,
+                    isSpatialInterpolation: document.getElementById("stemIsSpatialInterpolation").checked
+                };
+
+                startStemsExport.disabled = true;
+                stemsProgress.style.display = "block";
+                
+                let currentTrackIndex = 0;
+                let totalTracks = trackList.length;
+                stemsStatus.textContent = `Preparing to export ${totalTracks} stems...`;
+
+                player.on('onRenderProgress', (percent) => {
+                    stemsProgress.value = percent;
+                    stemsStatus.textContent = `Rendering Track ${currentTrackIndex + 1} / ${totalTracks} (${percent.toFixed(1)}%)`;
+                });
+
+                try {
+                    await player.exportStems(trackList, options, (wavBlob, trackIndex) => {
+                        stemsStatus.textContent = `Saving Track ${trackIndex}...`;
+                        const url = URL.createObjectURL(wavBlob);
+                        const a = document.createElement("a");
+                        a.style.display = "none";
+                        a.href = url;
+                        // Format track index with leading zeros
+                        const trackStr = trackIndex.toString().padStart(3, '0');
+                        a.download = `stem_track_${trackStr}.wav`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        currentTrackIndex++;
+                    });
+                    stemsStatus.textContent = "Export complete!";
+                } catch (e) {
+                    stemsStatus.textContent = "Export failed: " + e.message;
+                }
+                
+                startStemsExport.disabled = false;
+                stemsProgress.style.display = "none";
+            };
+
+            // Stem Mono-to-Stereo Weight visibility
+            const stemMonoToStereo = document.getElementById("stemMonoToStereo");
+            const stemMonoToStereoWeightContainer = document.getElementById("stemMonoToStereoWeightContainer");
+            const stemMonoToStereoWeight = document.getElementById("stemMonoToStereoWeight");
+            const stemMonoToStereoWeightVal = document.getElementById("stemMonoToStereoWeightVal");
+            
+            stemMonoToStereo.addEventListener('change', () => {
+                stemMonoToStereoWeightContainer.style.display = stemMonoToStereo.checked ? "flex" : "none";
+            });
+            stemMonoToStereoWeight.addEventListener('input', () => {
+                stemMonoToStereoWeightVal.textContent = stemMonoToStereoWeight.value + " dB";
+            });
+
+            // Solo logic state
+            const soloState = new Array(16).fill(false);
+            const muteState = new Array(16).fill(false);
+
+            function updateMutesFromSolo() {
+                const anySolo = soloState.some(s => s);
+                for (let i = 0; i < 16; i++) {
+                    const shouldMute = anySolo ? !soloState[i] : muteState[i];
+                    if (player) player.setChannelMute(i, shouldMute);
+                }
+            }
+
+            panicBtn.onclick = () => {
+                if (player) player.panic();
+            };
+
+            transposeEl.oninput = (e) => {
+                const val = parseInt(e.target.value, 10);
+                transposeValueEl.textContent = (val > 0 ? "+" : "") + val;
+                if (player) {
+                    player.setTranspose(val);
+                }
+            };
+            const midiFileEl = document.getElementById("midiFile");
+            const pianoChannelSelect = document.getElementById('pianoChannel');
+            const noteOnBtn = document.getElementById("noteOn");
+            const noteOffBtn = document.getElementById("noteOff");
+            const connectMidiBtn = document.getElementById('connectMidi');
+            const midiInDevicesSelect = document.getElementById('midiInDevices');
+            const midiStatusEl = document.getElementById('midiStatus');
+
+            player = new TimidityPlayer({ patchUrlBase: patchUrlBase });
+            player.init();
+
+            // Set initial sync state from the checkbox
+            player.isSyncEnabled = mixerSyncToggle.checked;
+
+            // Populate real-time instrument selector
+            populateRealtimeProgramSelector();
+
+            player.on('onRuntimeInitialized', () => {
+                statusEl.textContent = "Runtime ready. Click 'Init'.";
+            });
+
+            player.on('onMidiLoaded', (midi) => {
+                statusEl.textContent = `Loaded: ${midi.name || 'MIDI File'}`;
+                playPauseBtn.textContent = 'Play'; // Reset button text
+                playPauseBtn.disabled = false;
+                stopBtn.disabled = false;
+                renderWavBtn.disabled = false;
+                songInfoBtn.disabled = false;
+                seekerEl.disabled = false;
+                seekerEl.max = player.totalDuration;
+                seekerEl.value = 0;
+                currentTimeEl.textContent = player.formatTime(0);
+                totalTimeEl.textContent = player.formatTime(player.totalDuration);
+
+
+            });
+
+            player.on('onInstrumentLoading', (loaded, total, pathToLoad) => { // Update status during patch loading
+                statusEl.textContent = `Loading patches (${loaded}/${total}): ${pathToLoad}`;
+            });
+
+            player.on('onInstrumentLoaded', (count) => { // Update status after patch loading
+                statusEl.textContent = `Loaded ${count} patches.`;
+            });
+
+            let analyserL, analyserR, dataArrayL, dataArrayR, splitter;
+
+            function setupAnalysers() {
+                if (!player.audioContext || !player.scriptNode || analyserL) return;
+
+                splitter = player.audioContext.createChannelSplitter(2);
+                analyserL = player.audioContext.createAnalyser();
+                analyserR = player.audioContext.createAnalyser();
+
+                analyserL.fftSize = 1024;
+                analyserR.fftSize = 1024;
+                dataArrayL = new Float32Array(analyserL.frequencyBinCount);
+                dataArrayR = new Float32Array(analyserR.frequencyBinCount);
+
+                player.scriptNode.connect(splitter);
+                splitter.connect(analyserL, 0);
+                splitter.connect(analyserR, 1);
+            }
+
+            let isSeekingFromUI = false;
+            seekerEl.oninput = () => { isSeekingFromUI = true; };
+
+            player.on('onPlaying', (tick, elapsedSecs) => { // Update seeker and current time
+                if (!isSeekingFromUI) {
+                    seekerEl.value = elapsedSecs;
+                }
+                currentTimeEl.textContent = player.formatTime(elapsedSecs);
+                tickCounterEl.textContent = Math.floor(tick);
+
+                // Update DAW Meters
+                const activeVoices = player.getActiveVoices();
+                document.getElementById('polyphonyCounter').textContent = activeVoices;
+            });
+
+            let vuRenderId = null;
+            function renderMeters() {
+                vuRenderId = requestAnimationFrame(renderMeters);
+
+                setupAnalysers();
+
+                let targetL = 0;
+                let targetR = 0;
+
+                if (analyserL && analyserR) {
+                    analyserL.getFloatTimeDomainData(dataArrayL);
+                    analyserR.getFloatTimeDomainData(dataArrayR);
+
+                    let peakL = 0;
+                    for (let i = 0; i < dataArrayL.length; i++) {
+                        let absL = Math.abs(dataArrayL[i]);
+                        if (absL > peakL) peakL = absL;
+                    }
+
+                    let peakR = 0;
+                    for (let i = 0; i < dataArrayR.length; i++) {
+                        let absR = Math.abs(dataArrayR[i]);
+                        if (absR > peakR) peakR = absR;
+                    }
+
+                    targetL = peakL * 100;
+                    targetR = peakR * 100;
+                }
+
+                // Initialize state if not present
+                if (typeof player._vuL === 'undefined') player._vuL = 0;
+                if (typeof player._vuR === 'undefined') player._vuR = 0;
+
+                // Smooth decay logic
+                player._vuL = targetL > player._vuL ? targetL : player._vuL + (targetL - player._vuL) * 0.15;
+                player._vuR = targetR > player._vuR ? targetR : player._vuR + (targetR - player._vuR) * 0.15;
+
+                // Left Channel
+                let widthL = player._vuL;
+                if (widthL > 100) widthL = 100;
+                document.getElementById('masterVuL').style.transform = `scaleX(${1 - (widthL / 100)})`;
+
+                // Right Channel
+                let widthR = player._vuR;
+                if (widthR > 100) widthR = 100;
+                document.getElementById('masterVuR').style.transform = `scaleX(${1 - (widthR / 100)})`;
+
+                // --- Channel VU Meter Animation ---
+                if (typeof player._chVuLTarget === 'undefined') {
+                    player._chVuLTarget = new Array(16).fill(1.0);
+                    player._chVuRTarget = new Array(16).fill(1.0);
+                }
+
+                for (let i = 0; i < 16; i++) {
+                    if (vuLeftControls[i] && vuRightControls[i]) {
+                        let tL = player._chVuLTarget[i];
+                        let tR = player._chVuRTarget[i];
+
+                        // Add 0% to 5% jitter if channel is active (scale < 1)
+                        if (tL < 1) tL -= Math.random() * 0.03;
+                        if (tR < 1) tR -= Math.random() * 0.03;
+
+                        if (tL < 0) tL = 0;
+                        if (tR < 0) tR = 0;
+
+                        vuLeftControls[i].style.transform = `scaleY(${tL})`;
+                        vuRightControls[i].style.transform = `scaleY(${tR})`;
+                    }
+                }
+            }
+
+            // Start the render loop
+            renderMeters();
+
+            function resetMasterVu() {
+                player._vuL = 0;
+                player._vuR = 0;
+                document.getElementById('masterVuL').style.transform = 'scaleX(1)';
+                document.getElementById('masterVuR').style.transform = 'scaleX(1)';
+                document.getElementById('polyphonyCounter').textContent = '0';
+            }
+
+            player.on('onPlay', () => {
+                playPauseBtn.textContent = 'Pause';
+                //statusEl.textContent = `Playing: ${midiFileEl.files[0].name}`;
+            });
+
+            player.on('onResume', () => { // Playback resumed
+                playPauseBtn.textContent = 'Pause';
+                statusEl.textContent = `Playing: ${midiFileEl.files[0]?.name || 'Real-time Player'}`;
+            });
+
+            player.on('onPause', () => { // Playback paused
+                playPauseBtn.textContent = 'Play';
+                statusEl.textContent = `Paused: ${midiFileEl.files[0]?.name || 'Real-time Player'}`;
+                resetMasterVu();
+            });
+
+            player.on('onStop', () => {
+                statusEl.textContent = "Song freed.";
+                playPauseBtn.textContent = "Play";
+                playPauseBtn.disabled = false; // Disable buttons after stop
+                songInfoBtn.disabled = false;
+                seekerEl.disabled = false;
+                seekerEl.value = 0;
+                stopBtn.disabled = true;
+                renderWavBtn.disabled = false;
+                resetMasterVu();
+            });
+
+            player.on('onEnded', () => {
+                statusEl.textContent = "Playback finished.";
+            });
+
+            player.on('onShutdown', () => {
+                statusEl.textContent = "Exited.";
+            });
+
+            player.on('onSeek', (tick, timeInSeconds) => {
+                currentTimeEl.textContent = player.formatTime(timeInSeconds);
+                seekerEl.value = timeInSeconds;
+                statusEl.textContent = `Seeking to ${player.formatTime(timeInSeconds)}...`;
+            });
+
+            player.on('onInstrumentLoading', (loaded, total, pathToLoad) => {
+                statusEl.textContent = `Loading patches (${loaded}/${total}): ${pathToLoad}`;
+            });
+
+            player.on('onInstrumentLoaded', (count) => {
+                statusEl.textContent = `Loaded ${count} patches.`;
+            });
+
+
+            const subtitleBox = document.getElementById('subtitleBox');
+            const pianoContainer = document.getElementById('piano');
+            const mixerContainer = document.getElementById('mixer');
+
+            // 1. Build Piano Channels Dropdown
+            for (let i = 0; i < 16; i++) {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = `Channel ${i + 1}`;
+                if (i === 0) opt.selected = true; // default channel 0
+                pianoChannelSelect.appendChild(opt);
+            }
+
+            pianoChannelSelect.addEventListener('change', () => {
+                // Clear all currently highlighted keys
+                document.querySelectorAll('.key.active').forEach(el => el.classList.remove('active'));
+
+                // Ask the synth to resend the state of all active notes
+                player.resendActiveNotes();
+            });
+
+            // 2. Build Piano Roll (88 keys: MIDI 21 to 108)
+            const keys = {};
+            const isBlack = (note) => {
+                const n = note % 12;
+                return n === 1 || n === 3 || n === 6 || n === 8 || n === 10;
+            };
+            for (let note = 21; note <= 108; note++) {
+                const key = document.createElement('div');
+                key.classList.add('key');
+                key.classList.add(isBlack(note) ? 'black' : 'white');
+                key.id = `key-${note}`;
+                pianoContainer.appendChild(key);
+                keys[note] = key;
+            }
+
+            // 3. Build Mixer Channels
+            for (let i = 0; i < 16; i++) {
+                const strip = document.createElement('div');
+                strip.className = 'mixer-channel';
+
+                // Set channel 9 (0-indexed 9 is standard drum channel)
+                const chName = (i === 9) ? 'DRUM' : `CH ${i + 1}`;
+
+                strip.innerHTML = `
+                    <div class="ch-label">${chName}</div>
+
+                    <div class="vu-meter-container">
+                        <div class="vu-bar bar-left" id="vu-l-${i}" style="left: 0px;"></div>
+                        <div class="vu-bar bar-right" id="vu-r-${i}" style="right: 0px;"></div>
+                    </div>
+                    
+                    <div class="knob-track">
+                        <div class="knob-label">PAN</div>
+                        <input type="range" class="knob" id="pan-${i}" min="0" max="127" value="64">
+                    </div>
+
+                    <div class="knob-track">
+                        <div class="knob-label">BEND</div>
+                        <input type="range" class="knob" id="pb-${i}" min="0" max="16383" value="8192">
+                    </div>
+
+                    <div class="knob-track">
+                        <div class="knob-label">EXP</div>
+                        <input type="range" class="knob" id="ex-${i}" min="0" max="127" value="127">
+                    </div>
+                    
+                    <button class="solo-btn" id="solo-btn-${i}">SOLO</button>
+                    <button class="mute-btn" id="mute-btn-${i}">MUTE</button>
+
+                    <div class="fader-track">
+                        <input type="range" class="fader" id="vol-${i}" min="0" max="127" value="100" orient="vertical">
+                    </div>
+                `;
+                mixerContainer.appendChild(strip);
+
+                // Bind mixer events
+                const soloBtn = document.getElementById(`solo-btn-${i}`);
+                const muteBtn = document.getElementById(`mute-btn-${i}`);
+
+                soloBtn.addEventListener('click', () => {
+                    soloState[i] = soloBtn.classList.toggle('active');
+                    updateMutesFromSolo();
+                });
+
+                muteBtn.addEventListener('click', () => {
+                    muteState[i] = muteBtn.classList.toggle('active');
+                    updateMutesFromSolo();
+                });
+
+                document.getElementById(`vol-${i}`).addEventListener('input', (e) => {
+                    player.sendEvent(player.ME_MAINVOLUME, i, parseInt(e.target.value));
+                });
+                document.getElementById(`pan-${i}`).addEventListener('input', (e) => {
+                    player.sendEvent(player.ME_PAN, i, parseInt(e.target.value));
+                });
+                document.getElementById(`pb-${i}`).addEventListener('input', (e) => {
+                    const value = parseInt(e.target.value);
+                    // Split 14-bit value into LSB and MSB for MIDI
+                    const lsb = value & 0x7F;
+                    const msb = (value >> 7) & 0x7F;
+                    player.sendEvent(player.ME_PITCHWHEEL, i, lsb, msb);
+                });
+                document.getElementById(`ex-${i}`).addEventListener('input', (e) => {
+                    player.sendEvent(player.ME_EXPRESSION, i, parseInt(e.target.value));
+                });
+            }
+
+            for (let i = 0; i < 16; i++) {
+                volumeControls[i] = mixerContainer.querySelector(`#vol-${i}`);
+                panControls[i] = mixerContainer.querySelector(`#pan-${i}`);
+                pbControls[i] = mixerContainer.querySelector(`#pb-${i}`);
+                vuLeftControls[i] = mixerContainer.querySelector(`#vu-l-${i}`);
+                vuRightControls[i] = mixerContainer.querySelector(`#vu-r-${i}`);
+            }
+
+
+            player.on('onMidiEvent', (event) => {
+                // Subtitles / Lyrics (Meta Event 0xFF, channel 0x05, eventType ME_LYRIC)
+                if (event.status === 0xFF && event.channel === 0x05 && event.eventType === player.ME_LYRIC) {
+                    if (event.text) {
+                        // replace \r or \n with space
+                        subtitleBox.textContent += event.text.replace(/[\r\n]+/g, ' '); // Use event.text directly
+                    }
+                }
+                // Lyrics reset hack on seek
+                if (event.eventType === player.ME_ALL_NOTES_OFF || event.eventType === player.ME_RESET_CONTROLLERS) {
+                    // subtitleBox.textContent = ''; 
+                }
+
+                // Note On / Off for Piano Highlight
+                const selectedChannel = parseInt(pianoChannelSelect.value);
+
+
+                // Control Change events (volume/pan sync)
+                if (player.isSyncEnabled) {
+                    // Check for internal event types for Volume and Pan
+
+                    if (event.eventType == player.ME_MAINVOLUME) { // ME_MAINVOLUME is 4
+                        if (volumeControls[event.channel]) {
+                            const value = event.a;
+                            volumeControls[event.channel].value = value;
+                        }
+                    } else if (event.eventType == player.ME_PAN) { // ME_PAN is 5
+                        if (panControls[event.channel]) {
+                            const value = event.a;
+                            panControls[event.channel].value = value;
+                        }
+                    } else if (event.eventType == player.ME_PITCHWHEEL) { // ME_PITCHWHEEL is 6
+                        if (pbControls[event.channel]) {
+                            const value = event.a | (event.b << 7);
+                            pbControls[event.channel].value = value;
+                        }
+                    } else if (event.eventType == player.ME_EXPRESSION) { // ME_EXPRESSION is 7
+                        const exSlider = document.getElementById(`ex-${event.channel}`);
+                        if (exSlider) {
+                            exSlider.value = event.a;
+                        }
+                    }
+                }
+
+                vuMeter(event.channel, event.tick)
+            });
+
+            player.on('onNoteOn', (event) => {
+                // Channel velocity
+                channelVelocity[event.channel] = event.velocity;
+                const selectedChannel = parseInt(pianoChannelSelect.value);
+                if (event.channel == selectedChannel) {
+                    const key = keys[event.pitch];
+                    if (key) key.classList.add('active');
+                }
+
+
+            });
+
+            player.on('onNoteOff', (event) => {
+                channelVelocity[event.channel] = 0;
+                const selectedChannel = parseInt(pianoChannelSelect.value);
+                if (event.channel == selectedChannel) {
+                    const key = keys[event.pitch];
+                    if (key) key.classList.remove('active');
+                }
+
+
+
+
+            });
+
+
+
+
+            // Mixer Sync Toggle
+            mixerSyncToggle.addEventListener('change', (e) => {
+                player.isSyncEnabled = e.target.checked;
+                statusEl.textContent = `Mixer Sync: ${player.isSyncEnabled ? 'ON' : 'OFF'}`;
+            });
+
+
+            player.on('onError', (message) => {
+                statusEl.textContent = `Error: ${message}`;
+                playPauseBtn.disabled = true;
+                stopBtn.disabled = true;
+            });
+
+            const file = midiFileEl.files[0];
+            if(file) {
+                playPauseBtn.disabled = false;
+                player.load(file); // Load selected MIDI file
+            }
+
+
+
+            midiFileEl.onchange = (event) => {
+                const file = event.target.files[0];
+                if (file) player.load(file); // Load selected MIDI file
+            };
+            playPauseBtn.onclick = () => {
+                if (player.isPlaying && !player.isPaused) {
+                    player.pause();
+                } else if (!player.isPlaying) {
+                    const f = midiFileEl.files[0];
+                    player.loadAndPlay(f);
+                } else {
+                    player.resume();
+                }
+            };
+            seekerEl.onchange = (event) => {
+                player.seek(event.target.value);
+                isSeekingFromUI = false;
+            };
+
+            player.on('onRenderProgress', (progress) => {
+                renderProgress.value = progress;
+            });
+
+            renderWavBtn.onclick = async () => {
+                renderWavBtn.disabled = true;
+                playPauseBtn.disabled = true;
+                stopBtn.disabled = true;
+                seekerEl.disabled = true;
+                renderProgress.style.display = 'block';
+                renderProgress.value = 0;
+                statusEl.textContent = "Rendering WAV offline...";
+
+                const blob = await player.renderOffline();
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = (midiFileEl.files[0]?.name || 'output').replace(/\.[^/.]+$/, "") + ".wav";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                }
+
+                statusEl.textContent = "Rendering complete.";
+                renderProgress.style.display = 'none';
+                renderWavBtn.disabled = false;
+                playPauseBtn.disabled = false;
+                stopBtn.disabled = false;
+                seekerEl.disabled = false;
+            };
+
+            stopBtn.onclick = () => player.stop();
+            freeBtn.onclick = () => player.free();
+            exitBtn.onclick = () => player.shutdown();
+            // Test Note On/Off buttons are removed from UI in DAW mode, but you could re-add them if needed.
+            // noteOnBtn.onclick = () => player.noteOn(5, 30, 60, 127, { bank: 0 });
+            // noteOffBtn.onclick = () => player.noteOff(5, 60);
+
+            // MIDI Controller Integration
+            connectMidiBtn.onclick = initMidiController;
+
+            // Optional: bind stop event to clear subtitles and piano
+            player.on('onStop', () => {
+                subtitleBox.textContent = "";
+                document.querySelectorAll('.key.active').forEach(el => el.classList.remove('active'));
+            });
+        });
+
+        // Mixer Sync Toggle
+        document.getElementById("mixerSyncToggle").addEventListener('change', (e) => {
+            const player = window.player; // Assuming player is globally accessible or passed differently
+            if (player) {
+                player.isSyncEnabled = e.target.checked;
+                document.getElementById("status").textContent = `Mixer Sync: ${player.isSyncEnabled ? 'ON' : 'OFF'}`;
+            }
+        });
+
+        function populateRealtimeProgramSelector() {
+            const select = document.getElementById('realtimeProgram');
+            const programs = [
+                "Acoustic Grand Piano", "Bright Acoustic Piano", "Electric Grand Piano", "Honky-tonk Piano", "Electric Piano 1", "Electric Piano 2", "Harpsichord", "Clavinet",
+                "Celesta", "Glockenspiel", "Music Box", "Vibraphone", "Marimba", "Xylophone", "Tubular Bells", "Dulcimer",
+                "Drawbar Organ", "Percussive Organ", "Rock Organ", "Church Organ", "Reed Organ", "Accordion", "Harmonica", "Tango Accordion",
+                "Acoustic Guitar (nylon)", "Acoustic Guitar (steel)", "Electric Guitar (jazz)", "Electric Guitar (clean)", "Electric Guitar (muted)", "Overdriven Guitar", "Distortion Guitar", "Guitar Harmonics",
+                "Acoustic Bass", "Electric Bass (finger)", "Electric Bass (pick)", "Fretless Bass", "Slap Bass 1", "Slap Bass 2", "Synth Bass 1", "Synth Bass 2",
+                "Violin", "Viola", "Cello", "Contrabass", "Tremolo Strings", "Pizzicato Strings", "Orchestral Harp", "Timpani",
+                "String Ensemble 1", "String Ensemble 2", "Synth Strings 1", "Synth Strings 2", "Choir Aahs", "Voice Oohs", "Synth Voice", "Orchestra Hit",
+                "Trumpet", "Trombone", "Tuba", "Muted Trumpet", "French Horn", "Brass Section", "Synth Brass 1", "Synth Brass 2",
+                "Soprano Sax", "Alto Sax", "Tenor Sax", "Baritone Sax", "Oboe", "English Horn", "Bassoon", "Clarinet",
+                "Piccolo", "Flute", "Recorder", "Pan Flute", "Blown Bottle", "Shakuhachi", "Whistle", "Ocarina",
+                "Lead 1 (square)", "Lead 2 (sawtooth)", "Lead 3 (calliope)", "Lead 4 (chiff)", "Lead 5 (charang)", "Lead 6 (voice)", "Lead 7 (fifths)", "Lead 8 (bass + lead)",
+                "Pad 1 (new age)", "Pad 2 (warm)", "Pad 3 (polysynth)", "Pad 4 (choir)", "Pad 5 (bowed)", "Pad 6 (metallic)", "Pad 7 (halo)", "Pad 8 (sweep)",
+                "FX 1 (rain)", "FX 2 (soundtrack)", "FX 3 (crystal)", "FX 4 (atmosphere)", "FX 5 (brightness)", "FX 6 (goblins)", "FX 7 (echoes)", "FX 8 (sci-fi)",
+                "Sitar", "Banjo", "Shamisen", "Koto", "Kalimba", "Bag pipe", "Fiddle", "Shanai",
+                "Tinkle Bell", "Agogo", "Steel Drums", "Woodblock", "Taiko Drum", "Melodic Tom", "Synth Drum", "Reverse Cymbal",
+                "Guitar Fret Noise", "Breath Noise", "Seashore", "Bird Tweet", "Telephone Ring", "Helicopter", "Applause", "Gunshot"
+            ];
+            programs.forEach((name, index) => {
+                const opt = document.createElement('option');
+                opt.value = index;
+                opt.textContent = `${index}: ${name}`;
+                select.appendChild(opt);
+            });
+        }
+
+        function initMidiController() {
+            const midiStatusEl = document.getElementById('midiStatus');
+            const midiInDevicesSelect = document.getElementById('midiInDevices');
+            let currentInput = null;
+
+            if (navigator.requestMIDIAccess) {
+                midiStatusEl.textContent = "Requesting MIDI access...";
+                navigator.requestMIDIAccess({ sysex: false })
+                    .then(onMIDISuccess, onMIDIFailure);
+            } else {
+                midiStatusEl.textContent = "Web MIDI API is not supported in this browser.";
+                alert("Web MIDI API is not supported in this browser.");
+            }
+
+            function onMIDISuccess(midiAccess) {
+                midiStatusEl.textContent = "MIDI access granted. Select a device.";
+                midiInDevicesSelect.innerHTML = '<option value="">-- Select Device --</option>';
+                const inputs = midiAccess.inputs.values();
+                let deviceCount = 0;
+                for (let input = inputs.next(); input && !input.done; input = inputs.next()) {
+                    const opt = document.createElement('option');
+                    opt.value = input.value.id;
+                    opt.textContent = input.value.name;
+                    midiInDevicesSelect.appendChild(opt);
+                    deviceCount++;
+                }
+
+                if (deviceCount > 0) {
+                    midiInDevicesSelect.disabled = false;
+                    midiInDevicesSelect.onchange = () => {
+                        if (currentInput) {
+                            currentInput.onmidimessage = null; // Remove listener from old device
+                        }
+                        const selectedId = midiInDevicesSelect.value;
+                        if (selectedId) {
+                            currentInput = midiAccess.inputs.get(selectedId);
+                            currentInput.onmidimessage = handleMIDIMessage;
+                            midiStatusEl.textContent = `Connected to: ${currentInput.name}`;
+                        } else {
+                            midiStatusEl.textContent = "Disconnected. Select a device.";
+                        }
+                    };
+                } else {
+                    midiStatusEl.textContent = "No MIDI input devices found.";
+                }
+            }
+
+            function onMIDIFailure(msg) {
+                midiStatusEl.textContent = `Failed to get MIDI access - ${msg}`;
+                console.error(`Failed to get MIDI access - ${msg}`);
+            }
+        }
+
+        function handleMIDIMessage(event) {
+            if (!player || !player.realtimeSongPtr) return;
+            const selectedChannel = document.getElementById('realtimeChannel').valueAsNumber;
+            const program = parseInt(document.getElementById('realtimeProgram').value, 10);
+            const bank = document.getElementById('realtimeBank').valueAsNumber;
+            player.sendMessage(selectedChannel, bank, program, event, true);
+        }
+
+        function vuMeter(channel, tick) {
+            // --- VU Meter Logic ---
+
+            if (!vuLeftControls[channel] || !vuRightControls[channel]) return;
+
+            const vuL = vuLeftControls[channel];
+            const vuR = vuRightControls[channel];
+
+
+            let velocity = channelVelocity[channel];
+            if (velocity > 0) {
+                vuMeterOn(channel, tick, velocity);
+            }
+            else {
+                vueMeterOff(channel);
+            }
+        }
+
+
+        function vuMeterOn(channel, tick, velocity) {
+            // --- VU Meter Logic ---
+            if (!vuLeftControls[channel] || !vuRightControls[channel]) return;
+
+            const vuL = vuLeftControls[channel];
+            const vuR = vuRightControls[channel];
+
+            if (vuL && vuR) {
+                // Get controller values at the exact tick of the noteOn event
+                const volume = player.getControllerValueAtTick(channel, 7, tick);
+                const expression = player.getControllerValueAtTick(channel, 11, tick);
+                const pan = player.getControllerValueAtTick(channel, 10, tick);
+
+                // Calculate base volume (0.0 to 1.0)
+                const baseVolume = (velocity / 127) * (volume / 127) * (expression / 127);
+
+                // Apply panning law
+                let leftGain = 1.0;
+                let rightGain = 1.0;
+
+                if (pan < 64) { // Pan left
+                    rightGain = pan / 64.0;
+                } else if (pan > 64) { // Pan right
+                    leftGain = (127 - pan) / 63.0;
+                }
+
+                // Set VU meter target instead of direct style
+                if (typeof player._chVuLTarget === 'undefined') {
+                    player._chVuLTarget = new Array(16).fill(1.0);
+                    player._chVuRTarget = new Array(16).fill(1.0);
+                }
+
+                player._chVuLTarget[channel] = 1.0 - (baseVolume * leftGain);
+                player._chVuRTarget[channel] = 1.0 - (baseVolume * rightGain);
+            }
+        }
+
+        function vueMeterOff(channel) {
+            // --- VU Meter Release Logic ---
+            if (!vuLeftControls[channel] || !vuRightControls[channel]) return;
+
+            if (typeof player._chVuLTarget === 'undefined') {
+                player._chVuLTarget = new Array(16).fill(1.0);
+                player._chVuRTarget = new Array(16).fill(1.0);
+            }
+
+            player._chVuLTarget[channel] = 1.0;
+            player._chVuRTarget[channel] = 1.0;
+        }
+
+        function updateMixerSlider(channel, controllerNumber, value) {
+            if (controllerNumber === 7) { // Main Volume
+                const volSlider = document.getElementById(`vol-${channel}`);
+                if (volSlider) {
+                    volSlider.value = value;
+                }
+            } else if (controllerNumber === 10) { // Pan
+                const panSlider = document.getElementById(`pan-${channel}`);
+                if (panSlider) {
+                    panSlider.value = value;
+                }
+            }
+        }
+
+    </script>
+    <script src="timidity-player.js?v=3"></script>
+    <script src="libtimidity.js?v=3"></script>
+</body>
+
+</html>
