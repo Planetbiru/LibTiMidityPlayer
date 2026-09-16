@@ -9,6 +9,8 @@ Module.onRuntimeInitialized = function () {
 };
 
 // This must be defined *before* libtimidity.js is loaded and executed.
+// You must include `timidity-player.js` or `timidity-player.min.js` before `libtimidity.js` or `libtimidity.min.js`
+
 Module.preRun = [() => {
     FS.mkdir('/gus-patch');
     FS.createPreloadedFile('/gus-patch', 'timidity.cfg', patchUrlBase + '/timidity.cfg', true, true);
@@ -87,6 +89,7 @@ class TimidityPlayer {
         return new Proxy(this, {
             get(target, prop, receiver) {
                 // Capture access to "onXxx" properties that do not yet exist → turn them into event registrars.
+                // player.onLoaded(func) equals to player.on('onLoaded', func)
                 if (
                     typeof prop === 'string' &&
                     prop.startsWith('on') &&
