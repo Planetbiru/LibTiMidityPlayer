@@ -69,4 +69,81 @@ player.sendEvent(256, 0, bendValue);
 Please refer to the JSDoc comments within `timidity-player.js` for an exhaustive list of methods and events. For a detailed list of changes made to the C Core, read `CHANGELOG.md`.
 
 ## License
-The C core synthesizer is licensed under the **LGPL** (borrowed from the original `libTiMidity` project). The JavaScript bindings, WebAssembly bridge, and `TimidityPlayer` class created for this specific repository are provided under the **MIT License**. See the `LICENSE` file for details.
+
+### MIT License (JavaScript bindings & modifications)
+
+Copyright (c) 2026 Kamshory, MT
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+```txt
+Copyright (c) 2026 Kamshory, MT
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### LGPL / Artistic License (C core)
+
+The original C synthesizer engine (`src/c-core/original`) is licensed under
+**LGPL v2.1** and the **Artistic License**.
+
+Any modifications to the C source code (`src/c-core/modified`) are distributed under MIT,
+but remain subject to the obligations of the LGPL/Artistic License for the original portions.
+
+See `licenses/COPYING` and `licenses/LICENSE-ARTISTIC.md` for the complete license texts.
+
+
+## Attribution
+
+**TiMidity (1995)** – Tuukka Toivonen
+
+**libTiMidity (2004)** – lostclus
+
+**Maintenance** – Ozkan Sezer (sezero)
+
+**JavaScript bindings & modifications (2026)** – Kamshory, MT
+
+
+## Repository Structure
+
+```txt
+LibTiMidityPlayer/
+├── src/
+│   ├── c-core/original   # Original libTiMidity C source (LGPL/Artistic)
+│   ├── c-core/modified   # Modified C source (MIT + LGPL obligations)
+│   └── js-bindings       # Compiled JavaScript: libtimidity.js (MIT)
+├── licenses/
+│   ├── LICENSE-MIT.md
+│   ├── COPYING           # LGPL v2.1
+│   └── LICENSE-ARTISTIC.md
+├── README.md
+└── LICENSE.md
+```
+
+## Notes
+
+- If distributing binaries (e.g., npm package or DLL), include a link to this repository so users can access the modified source code as required by LGPL.
+
+- The JavaScript binding (`libtimidity.js`) is fully MIT-licensed, making it free to use in both commercial and open-source projects.
+
