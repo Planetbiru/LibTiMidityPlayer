@@ -70,6 +70,11 @@ Please refer to the JSDoc comments within `timidity-player.js` for an exhaustive
 
 ## License
 
+- The original C synthesizer engine (`src/c-core/original`) is licensed under **LGPL v2.1** and the **Artistic License**.  
+- Any modifications to the C source (`src/c-core/modified`) are distributed under MIT, but remain subject to LGPL/Artistic obligations for the original portions.  
+- The compiled JavaScript file (`src/js-bindings/libtimidity.js`) is licensed under **MIT**.
+
+
 ### MIT License (JavaScript bindings & modifications)
 
 Copyright (c) 2026 Kamshory, MT
