@@ -22,6 +22,38 @@ The standard libTiMidity engine has been heavily modified and extended to meet t
 - **Offline Rendering Protection**:
   Automatically manages Web Audio API contexts, preventing accidental real-time inputs from corrupting offline rendering tasks (e.g., bouncing tracks to a WAV file).
 
+## Why create a DAW edition of a MIDI Player?
+
+1. **Real-time events for playing notes**
+   - Supports different instruments and banks directly.
+   - Can receive input from MIDI controllers or computer keyboards with minimum delay.
+
+2. **Real-time control events during playback**
+   - Loads new MIDI data without resetting the engine.
+   - Performs dynamic transposition.
+   - Sends control events such as volume, pan, expression, pitch bend, sustain pedal, and modulation.
+   - Mute, unmute, and solo each channel.
+   - Changes tempo in real time.
+
+3. **Enhancing trigger events required by DAWs**
+   - Lyric, meta-event, and note on/off events are sent back to the UI with sample-accurate precision.
+   - Synchronization is perfectly aligned with visuals such as piano rolls, VU meters, and automation lanes.
+   - Pitch bend, pan, and expression can be updated in real time so the DAW UI remains synchronized.
+
+4. **Integration with modern DAW workflows**
+   - Supports offline rendering (bounce to WAV) without being interrupted by real-time input.
+   - Separates the playback instance from the synthesizer instance for more flexible control.
+   - Provides an API that DAWs can use for automation, mixing, and channel monitoring.
+
+5. **Scalability and efficiency**
+   - There is no need to load all instruments at once; only the required patches are loaded.
+   - Reduces browser overhead and helps maintain smooth performance in large projects with many tracks.
+
+6. **Combining MIDI synthesis and audio during playback and rendering**
+   - Enables mixing MIDI instruments with recorded audio or sample libraries.
+   - Provides flexibility for hybrid arrangements, such as audio drums plus MIDI strings.
+   - During rendering, the final result can be a single audio mix that combines both sound sources.
+
 ## Quick Start
 
 Include the scripts in your HTML:
