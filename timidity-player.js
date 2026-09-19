@@ -326,6 +326,7 @@ class TimidityPlayer {
         const timeSigEvents = [];
         const trackNames = [];
         const trackHasNotes = [];
+        let maxTick = 0;
 
         for (let t = 0; t < tracksCount; t++) {
             if (readString(4) !== 'MTrk') break;
@@ -378,6 +379,7 @@ class TimidityPlayer {
                     }
                 }
             }
+            if (absTick > maxTick) maxTick = absTick;
             trackNames.push(currentTrackName || `Track ${t}`);
             trackHasNotes.push(hasChannelEvents);
         }
@@ -437,7 +439,15 @@ class TimidityPlayer {
             });
         }
 
-        return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes };
+        let totalSeconds = 0;
+        if (timeMap.length > 0) {
+            const lastMap = timeMap[timeMap.length - 1];
+            const deltaTicks = maxTick - lastMap.tick;
+            const deltaSec = (deltaTicks / division) * (lastMap.mpqn / 1000000);
+            totalSeconds = lastMap.timeSec + deltaSec;
+        }
+
+        return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, maxTick, totalSeconds };
     }
 
     /**
@@ -892,11 +902,22 @@ class TimidityPlayer {
                     this.Module._free(newDataPtr);
 
                     if (result === 0) {
-                        this.emit('onMidiUpdated', midi);
+                        // Rebuild tempo map dari data MIDI baru, sekaligus refresh totalDuration.
+                        try {
+                            this.tempoMap = this._buildTempoMap(midiData);
+                            this.lastMidiData = midiData; // Simpan untuk renderOffline berikutnya
+                            if (this.tempoMap && typeof this.tempoMap.totalSeconds === 'number' && this.tempoMap.totalSeconds > 0) {
+                                this.totalDuration = this.tempoMap.totalSeconds;
+                            } else {
+                                // Fallback: kalau C-side kebetulan sudah menghitung ulang, pakai itu
+                                this.totalDuration = this.c.getTotalTime(this.songPtr) / 1000;
+                            }
+                        } catch (e) {
+                            console.warn("Failed to rebuild tempo map after update:", e);
+                            this.totalDuration = this.c.getTotalTime(this.songPtr) / 1000;
+                        }
+                        this.emit('onMidiUpdated', midi, this.totalDuration); // 👈 kirim durasi baru ke listener
                         return true;
-                    } else {
-                        this.emit('onError', "Failed to update MIDI data. Error code: " + result);
-                        return false;
                     }
                 });
             });
@@ -2000,5 +2021,21 @@ class TimidityPlayer {
             const list = data.drums.get(bank) || [];
             return list.sort((a, b) => a.id - b.id);
         });
+    }
+
+    /**
+     * 
+     * @returns Update song duration
+     * @returns {number} Las calculate song duration
+     */
+    updateSongDuration() {
+        // Prioritas 1: nilai akurat dari tempoMap JS
+        if (this.tempoMap && typeof this.tempoMap.totalSeconds === 'number' && this.tempoMap.totalSeconds > 0) {
+            this.totalDuration = this.tempoMap.totalSeconds;
+            return this.totalDuration;
+        }
+        // Fallback: nilai dari C (mungkin stale setelah updateEvents)
+        this.totalDuration = this.c.getTotalTime(this.songPtr) / 1000;
+        return this.totalDuration;
     }
 }
