@@ -22,7 +22,7 @@ The standard libTiMidity engine has been heavily modified and extended to meet t
 - **Offline Rendering Protection**:
   Automatically manages Web Audio API contexts, preventing accidental real-time inputs from corrupting offline rendering tasks (e.g., bouncing tracks to a WAV file).
 
-## Why Create a DAW edition of a MIDI Player?
+## Why Create a DAW Edition of a MIDI Player?
 
 1. **Real-time events for playing notes**
    - Supports different instruments and banks directly.
