@@ -1736,6 +1736,32 @@ class TimidityPlayer {
     }
 
     /**
+     * Converts a MIDI tick position into absolute time in seconds, using the
+     * parsed tempo map (which accounts for all tempo changes in the song).
+     *
+     * This is the inverse of {@link TimidityPlayer#timeToTick} and is useful for
+     * aligning the audio engine with visual timelines (playhead, lyrics, score
+     * scrolling) when the source of truth is tick-based rather than time-based.
+     *
+     * @param {number} tick - The absolute MIDI tick position.
+     * @returns {number} Time in seconds corresponding to the given tick, or 0
+     *                   if the tempo map is not available.
+     */
+    tickToTime(tick) {
+        if (this.noTempoMap()) return 0;
+
+        let lastEvent = this.tempoMap.timeMap[0];
+        for (const ev of this.tempoMap.timeMap) {
+            if (ev.tick > tick) break;
+            lastEvent = ev;
+        }
+
+        const deltaTicks = tick - lastEvent.tick;
+        const deltaTimeSec = (deltaTicks / this.tempoMap.division) * (lastEvent.mpqn / 1000000);
+        return lastEvent.timeSec + deltaTimeSec;
+    }
+
+    /**
      * Checks if a specific MIDI tick aligns with a metronome click.
      * @param {number} tick - The absolute tick position.
      * @returns {Object|null} Metronome data { isClick, isDownbeat, beatNumber, measure } or null if invalid.
