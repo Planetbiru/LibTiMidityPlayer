@@ -245,6 +245,12 @@ Converts a MIDI tick into a measure/bar number (useful for vocal training or DAW
   - `tick` *(number)*: The absolute tick position.
 - **Returns:** `number` - The absolute measure count (1-indexed).
 
+### `tickToTime(tick)`
+Converts a MIDI tick into an absolute time value in seconds.
+- **Parameters:**
+  - `tick` *(number)*: The absolute tick position.
+- **Returns:** `number` - The corresponding absolute time in seconds, calculated based on the tempo map and ticks-per-quarter-note (PPQN) division.
+
 ### `getMetronome(tick)`
 Checks if a specific MIDI tick aligns exactly with a metronome click.
 - **Parameters:**
