@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SongPlayer Demo — MIDI + Audio Clips</title>
+<style>
+    :root {
+        --bg: #0f1116;
+        --panel: #1a1d24;
+        --panel-2: #22262f;
+        --border: #2c313b;
+        --text: #e6e8ec;
+        --muted: #8c94a3;
+        --accent: #5c8dff;
+        --accent-2: #4ade80;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        padding: 24px;
+        min-height: 100vh;
+    }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    h3 { font-size: 14px; margin: 16px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+        max-width: 900px;
+    }
+    button {
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        padding: 8px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        margin-right: 6px;
+        margin-bottom: 6px;
+        transition: 0.15s;
+    }
+    button:hover:not(:disabled) { background: #2c313b; border-color: #3d4350; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover:not(:disabled) { background: #4a7de8; }
+    button.success { background: var(--accent-2); border-color: var(--accent-2); color: #052e13; }
+    #status {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 12px;
+        min-height: 20px;
+    }
+    #status.ok { color: var(--accent-2); }
+    #status.err { color: #f87171; }
+    input[type="range"] { width: 100%; margin: 8px 0; accent-color: var(--accent); }
+    label { font-size: 13px; color: var(--muted); display: inline-block; margin-right: 12px; }
+    select {
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+    .time-row { display: flex; justify-content: space-between; font-family: ui-monospace, monospace; font-size: 13px; color: var(--muted); }
+    .track {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin-bottom: 6px;
+        font-size: 13px;
+    }
+    .track .name { flex: 1; }
+    .track .clips-count { color: var(--muted); font-size: 12px; }
+    .track button { padding: 4px 10px; font-size: 12px; margin: 0; }
+    .track button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .render-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 10px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin-bottom: 6px;
+        font-size: 13px;
+    }
+    .render-item a { color: var(--accent); text-decoration: none; font-weight: 500; }
+    .render-item a:hover { text-decoration: underline; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    code { background: var(--panel-2); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>🎵 SongPlayer Demo</h1>
+<div id="status">Initializing…</div>
+
+<div class="panel">
+    <h3>Playback</h3>
+    <div>
+        <button id="btn-init" class="primary">Initialize</button>
+        <button id="btn-play" disabled>▶ Play</button>
+        <button id="btn-pause" disabled>⏸ Pause</button>
+        <button id="btn-stop" disabled>⏹ Stop</button>
+        <button id="btn-restart" disabled>↺ Restart</button>
+    </div>
+    <div class="time-row" style="margin-top:12px">
+        <span id="time-current">0:00</span>
+        <span id="time-total">0:00</span>
+    </div>
+    <input type="range" id="seeker" min="0" max="100" step="0.01" value="0" disabled>
+    <label>Volume</label>
+    <input type="range" id="volume" min="0" max="100" value="70">
+</div>
+
+<div class="panel">
+    <h3>Tracks</h3>
+    <div id="tracks"><em style="color:var(--muted);font-size:13px">Initialization required…</em></div>
+</div>
+
+<div class="panel">
+    <h3>Offline Render</h3>
+    <div class="grid">
+        <div>
+            <label>Sample Rate</label>
+            <select id="render-sr">
+                <option value="22050">22 050 Hz</option>
+                <option value="44100" selected>44 100 Hz</option>
+                <option value="48000">48 000 Hz</option>
+                <option value="96000">96 000 Hz</option>
+            </select>
+        </div>
+        <div>
+            <label>Channels</label>
+            <select id="render-ch">
+                <option value="stereo" selected>Stereo</option>
+                <option value="mono">Mono</option>
+            </select>
+        </div>
+    </div>
+    <div style="margin-top:12px">
+        <button id="btn-render-merged" disabled>Render Merged (1 file)</button>
+        <button id="btn-render-tracks" disabled>Render Per-Track</button>
+    </div>
+    <div id="render-progress" style="font-size:12px;color:var(--muted);margin-top:8px;min-height:16px"></div>
+    <div id="renders" style="margin-top:12px"></div>
+</div>
+
+<!-- 1) Set patchUrlBase BEFORE loading TimidityPlayer's scripts -->
+<script>
+    window.patchUrlBase = 'http://localhost/cipta-lagu/composer/gus-patch';
+</script>
+
+<!-- 2) TimidityPlayer (WASM + wrapper) -->
+<script src="timidity-player.min.js"></script>
+<script src="libtimidity.min.js"></script>
+
+<!-- 3) SongPlayer -->
+<script src="song-player.js"></script>
+
+<script>
+/* ------------------------------------------------------------------ */
+/*  Utilities                                                          */
+/* ------------------------------------------------------------------ */
+const $ = (id) => document.getElementById(id);
+const setStatus = (msg, type = '') => {
+    const s = $('status');
+    s.textContent = msg;
+    s.className = type;
+};
+const fmt = (sec) => {
+    if (isNaN(sec) || sec < 0) return '0:00';
+    const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return m + ':' + String(s).padStart(2, '0');
+};
+const encodeVLQ = (v) => {
+    const b = [v & 0x7F]; v >>>= 7;
+    while (v > 0) { b.unshift((v & 0x7F) | 0x80); v >>>= 7; }
+    return b;
+};
+const buildMidiFile = (tracks, division = 480) => {
+    const parts = [];
+    parts.push([0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6]);  // MThd
+    parts.push([0, tracks.length > 1 ? 1 : 0, (tracks.length >> 8) & 0xFF, tracks.length & 0xFF]);
+    parts.push([(division >> 8) & 0xFF, division & 0xFF]);
+    for (const events of tracks) {
+        const tr = [];
+        let prev = 0;
+        const sorted = [...events].sort((a, b) => (a.tick - b.tick) || ((a.order || 0) - (b.order || 0)));
+        for (const ev of sorted) {
+            tr.push(...encodeVLQ(ev.tick - prev), ...ev.bytes);
+            prev = ev.tick;
+        }
+        const len = tr.length;
+        parts.push([0x4D, 0x54, 0x72, 0x6B, (len >> 24) & 0xFF, (len >> 16) & 0xFF, (len >> 8) & 0xFF, len & 0xFF]);
+        parts.push(tr);
+    }
+    const flat = [].concat(...parts);
+    let bin = '';
+    for (let i = 0; i < flat.length; i += 8192) bin += String.fromCharCode.apply(null, flat.slice(i, i + 8192));
+    return 'data:audio/midi;base64,' + btoa(bin);
+};
+
+/* ------------------------------------------------------------------ */
+/*  Demo MIDI (C major melody, 2 bars)                                 */
+/* ------------------------------------------------------------------ */
+function createDemoMidi() {
+    const division = 480;
+    const melody = [
+        [60,240],[62,240],[64,240],[65,240],[67,240],[69,240],[71,240],[72,240],
+        [72,240],[71,240],[69,240],[67,240],[65,240],[64,240],[62,240],[60,240],
+        [60,120],[64,120],[67,120],[72,120],[67,120],[64,120],[60,240],
+    ];
+    const events = [];
+    let tick = 0;
+    events.push({ tick: 0, order: 0, bytes: [0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20] }); // Tempo 120
+    events.push({ tick: 0, order: 0, bytes: [0xFF, 0x58, 0x04, 0x04, 0x02, 0x18, 0x08] }); // 4/4
+    events.push({ tick: 0, order: 0, bytes: [0xC0, 0x00] }); // Grand Piano
+    for (const [note, dur] of melody) {
+        events.push({ tick: tick,             order: 1, bytes: [0x90, note, 100] });
+        events.push({ tick: tick + dur - 10,  order: 0, bytes: [0x80, note, 0] });
+        tick += dur;
+    }
+    events.push({ tick: tick, order: 0, bytes: [0xFF, 0x2F, 0x00] });
+    return buildMidiFile([events], division);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Demo audio assets (synthesized)                                    */
+/* ------------------------------------------------------------------ */
+async function generateDemoAssets(player) {
+    const sr = 44100;
+
+    // Kick drum
+    {
+        const ctx = new OfflineAudioContext(2, sr * 0.5, sr);
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.setValueAtTime(150, 0);
+        osc.frequency.exponentialRampToValueAtTime(50, 0.15);
+        gain.gain.setValueAtTime(0.85, 0);
+        gain.gain.exponentialRampToValueAtTime(0.001, 0.4);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(0); osc.stop(0.4);
+        player.setAudioAsset('kick', await ctx.startRendering());
+    }
+
+    // Snare (white noise)
+    {
+        const ctx = new OfflineAudioContext(2, sr * 0.5, sr);
+        const buf = ctx.createBuffer(1, sr * 0.3, sr);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const hp = ctx.createBiquadFilter(); 
+        hp.type = 'highpass'; hp.frequency.value = 800;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.6, 0);
+        gain.gain.exponentialRampToValueAtTime(0.001, 0.2);
+        src.connect(hp).connect(gain).connect(ctx.destination);
+        src.start(0);
+        player.setAudioAsset('snare', await ctx.startRendering());
+    }
+
+    // Bass (saw + lowpass)
+    {
+        const ctx = new OfflineAudioContext(2, sr * 1.2, sr);
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth'; 
+        osc.frequency.value = 110;
+        const filter = ctx.createBiquadFilter(); 
+        filter.type = 'lowpass'; 
+        filter.frequency.value = 500;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0, 0);
+        gain.gain.linearRampToValueAtTime(0.35, 0.05);
+        gain.gain.setValueAtTime(0.35, 0.9);
+        gain.gain.linearRampToValueAtTime(0, 1.1);
+        osc.connect(filter).connect(gain).connect(ctx.destination);
+        osc.start(0); osc.stop(1.1);
+        player.setAudioAsset('bass', await ctx.startRendering());
+    }
+
+    // Pad (three sines)
+    {
+        const ctx = new OfflineAudioContext(2, sr * 3, sr);
+        for (const f of [220, 277.18, 329.63]) {
+            const osc = ctx.createOscillator(); osc.type = 'sine'; 
+            osc.frequency.value = f;
+            const g = ctx.createGain(); 
+            g.gain.value = 0.12;
+            osc.connect(g).connect(ctx.destination);
+            osc.start(0);
+        }
+        player.setAudioAsset('pad', await ctx.startRendering());
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Demo tracks                                                        */
+/* ------------------------------------------------------------------ */
+function buildDemoTracks() {
+    const T = 480; // one quarter-note at division=480
+    return [
+        {
+            id: 'drums', name: '🥁 Drums', muted: false, solo: false,
+            clips: [
+                { id: 'k1', audioAssetId: 'kick',  startTick: 0,    trimmedDurationTicks: 240, trimStartOffsetTicks: 0, volume: 1.0 },
+                { id: 'k2', audioAssetId: 'kick',  startTick: 960,  trimmedDurationTicks: 240, trimStartOffsetTicks: 0, volume: 1.0 },
+                { id: 's1', audioAssetId: 'snare', startTick: 480,  trimmedDurationTicks: 240, trimStartOffsetTicks: 0, volume: 0.7 },
+                { id: 's2', audioAssetId: 'snare', startTick: 1440, trimmedDurationTicks: 240, trimStartOffsetTicks: 0, volume: 0.7 },
+            ],
+        },
+        {
+            id: 'bass', name: '🎸 Bass', muted: false, solo: false,
+            clips: [{
+                id: 'b1', audioAssetId: 'bass',
+                startTick: 0, trimmedDurationTicks: 1920, trimStartOffsetTicks: 0,
+                volume: 0.9,
+                fadeIn:  { enable: true, from: 0.0, to: 0.1,  shape: 'linear' },
+                fadeOut: { enable: true, from: 1.7, to: 1.95, shape: 'linear' },
+            }],
+        },
+        {
+            id: 'pad', name: '✨ Pad', muted: false, solo: false,
+            clips: [{
+                id: 'p1', audioAssetId: 'pad',
+                startTick: 960, trimmedDurationTicks: 2880, trimStartOffsetTicks: 0,
+                volume: 0.55,
+                fadeIn:  { enable: true, from: 0.0, to: 0.6, shape: 'easeIn'  },
+                fadeOut: { enable: true, from: 2.3, to: 2.9, shape: 'easeOut' },
+            }],
+        },
+    ];
+}
+
+/* ------------------------------------------------------------------ */
+/* Demo state & wiring                                                */
+/* ------------------------------------------------------------------ */
+let player = null;
+let isDraggingSeeker = false;
+let currentSeekValue = 0;
+
+function renderTracksUI() {
+    const container = $('tracks');
+    if (!player) return;
+    container.innerHTML = '';
+    for (let i = 0; i < player.audioTracks.length; i++) {
+        const t = player.audioTracks[i];
+        const div = document.createElement('div');
+        div.className = 'track';
+        div.innerHTML = `
+            <span class="name">${t.name}</span>
+            <span class="clips-count">${(t.clips || []).length} clip${(t.clips || []).length === 1 ? '' : 's'}</span>
+            <button data-mute="${i}" class="${t.muted ? 'active' : ''}">Mute</button>
+            <button data-solo="${i}" class="${t.solo ? 'active' : ''}">Solo</button>
+        `;
+        container.appendChild(div);
+    }
+    container.querySelectorAll('button[data-mute]').forEach(btn => {
+        btn.onclick = () => {
+            const i = +btn.dataset.mute;
+            player.audioTracks[i].muted = !player.audioTracks[i].muted;
+            renderTracksUI();
+        };
+    });
+    container.querySelectorAll('button[data-solo]').forEach(btn => {
+        btn.onclick = () => {
+            const i = +btn.dataset.solo;
+            player.audioTracks[i].solo = !player.audioTracks[i].solo;
+            renderTracksUI();
+        };
+    });
+}
+
+function updateTotalTime() {
+    if (!player) return;
+    const dur = player.getSongDuration();
+    $('time-total').textContent = fmt(dur);
+    $('seeker').max = dur || 100;
+}
+
+/* ---- Initialize ---- */
+$('btn-init').onclick = async () => {
+    $('btn-init').disabled = true;
+    try {
+        setStatus('Creating SongPlayer…');
+        player = new SongPlayer({
+            patchUrlBase: window.patchUrlBase,
+            bufferSize: 4096,
+            sampleRate: 44100,
+        });
+
+        setStatus('Initializing audio context + WASM…');
+        await player.init();
+
+        setStatus('Synthesizing demo audio assets…');
+        await generateDemoAssets(player);
+
+        setStatus('Registering audio tracks…');
+        player.setAudioTracks(buildDemoTracks());
+
+        setStatus('Loading demo MIDI…');
+        await player.load(createDemoMidi());
+
+        renderTracksUI();
+        updateTotalTime();
+        setStatus(`✅ Ready — song duration ${fmt(player.getSongDuration())}`, 'ok');
+
+        // Enable controls
+        ['btn-play','btn-pause','btn-stop','seeker','btn-render-merged','btn-render-tracks', 'btn-restart']
+            .forEach(id => $(id).disabled = false);
+
+        /* Wire events */
+        player.on('onPlaying', (tick, sec) => {
+            if (isDraggingSeeker) return;
+            $('seeker').value = sec;
+            $('time-current').textContent = fmt(sec);
+        });
+        player.on('onPause', () => setStatus('⏸ Paused'));
+        player.on('onStop',  () => {
+            setStatus('⏹ Stopped');
+            $('seeker').value = 0;
+            $('time-current').textContent = '0:00';
+        });
+        player.on('onEnded', () => setStatus('🏁 Song ended'));
+        player.on('onInstrumentLoading', (loaded, total) => {
+            setStatus(`Loading instruments ${loaded}/${total}…`);
+        });
+
+    } catch (err) {
+        console.error(err);
+        setStatus('❌ ' + (err.message || err), 'err');
+        $('btn-init').disabled = false;
+    }
+};
+
+/* ---- Playback ---- */
+$('btn-play').onclick = async () => {
+    if (!player) return;
+
+    // A) Sedang bermain → ignore.
+    if (player.playingInterval !== null && !player.isPaused && player.songPtr !== 0) {
+        setStatus('▶ Already playing');
+        return;
+    }
+
+    // B) Pause di tengah lagu → resume saja.
+    if (player.isPaused && player.songPtr !== 0) {
+        await player.resume();
+        setStatus('▶ Resumed');
+        return;
+    }
+
+    // C) Fresh start / setelah lagu selesai → play(0) akan reload bila perlu.
+    await player.resume();
+    await player.play(0);   // <-- await, karena play() sekarang async
+    setStatus('▶ Playing…');
+};
+
+$('btn-pause').onclick = () => {
+    if (!player) return;
+    player.pause();
+    setStatus('⏸ Paused');
+};
+
+$('btn-stop').onclick = () => {
+    if (!player) return;
+    player.seek(0);
+    player.pause();
+    $('seeker').value = 0;
+    $('time-current').textContent = '0:00';
+    setStatus('⏹ Stopped');
+};
+
+/* ---- Seeker ---- */
+$('seeker').addEventListener('input', (e) => {
+    isDraggingSeeker = true;
+    $('time-current').textContent = fmt(parseFloat(e.target.value));
+});
+$('seeker').addEventListener('change', (e) => {
+    isDraggingSeeker = false;
+    player?.seek(parseFloat(e.target.value));
+});
+
+/* ---- Volume ---- */
+$('volume').addEventListener('input', (e) => {
+    player?.setMasterVolume(parseInt(e.target.value) / 100);
+});
+$('btn-restart').onclick = async () => {
+    if (!player) return;
+    setStatus('↺ Restarting…');
+    await player.restart();
+    setStatus('▶ Playing…');
+};
+// jangan lupa enable di bagian init:
+// ['btn-play','btn-pause','btn-stop','btn-restart','seeker', ...]
+
+/* ---- Render ---- */
+function addRenderResult(name, blob, type) {
+    const div = document.createElement('div');
+    div.className = 'render-item';
+    const url = URL.createObjectURL(blob);
+    const size = (blob.size / 1024).toFixed(1);
+    div.innerHTML = `<span>${name} <em style="color:var(--muted);font-style:normal">(${size} KB)</em></span>
+                     <a href="${url}" download="${name.replace(/\s+/g,'_')}.wav">⬇ Download</a>`;
+    $('renders').appendChild(div);
+}
+
+$('btn-render-merged').onclick = async () => {
+    if (!player) return;
+    $('btn-render-merged').disabled = true;
+    $('renders').innerHTML = '';
+    try {
+        const sr = +$('render-sr').value;
+        const ch = $('render-ch').value;
+        setStatus('Rendering merged…');
+        const blob = await player.render({
+            mode: 'merged',
+            sampleRate: sr,
+            channels: ch,
+            onProgress: (pct, lbl) => $('render-progress').textContent = `${pct}% — ${lbl}`,
+        });
+        addRenderResult(`Merged (${ch}, ${sr} Hz)`, blob, 'merged');
+        setStatus('✅ Merged render complete', 'ok');
+    } catch (e) {
+        console.error(e);
+        setStatus('❌ Render failed: ' + (e.message || e), 'err');
+    } finally {
+        $('btn-render-merged').disabled = false;
+        setTimeout(() => $('render-progress').textContent = '', 4000);
+    }
+};
+
+$('btn-render-tracks').onclick = async () => {
+    if (!player) return;
+    $('btn-render-tracks').disabled = true;
+    $('renders').innerHTML = '';
+    try {
+        const sr = +$('render-sr').value;
+        const ch = $('render-ch').value;
+        setStatus('Rendering per-track…');
+        const results = await player.render({
+            mode: 'per-track',
+            sampleRate: sr,
+            channels: ch,
+            onProgress: (pct, lbl) => $('render-progress').textContent = `${pct}% — ${lbl}`,
+        });
+        for (const r of results) addRenderResult(`[${r.type}] ${r.name}`, r.blob, r.type);
+        setStatus(`✅ Rendered ${results.length} tracks`, 'ok');
+    } catch (e) {
+        console.error(e);
+        setStatus('❌ Render failed: ' + (e.message || e), 'err');
+    } finally {
+        $('btn-render-tracks').disabled = false;
+        setTimeout(() => $('render-progress').textContent = '', 4000);
+    }
+};
+</script>
+</body>
+</html>
