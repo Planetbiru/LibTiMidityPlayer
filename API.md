@@ -137,15 +137,41 @@ Loads a MIDI file into the player and automatically analyzes and downloads the r
 Starts or resumes playback of the currently loaded MIDI song.
 - **Parameters:**
   - `offset` *(number)*: Time offset in seconds to start playing from.
-  - `options` *(Object)*: Additional playback configuration. *(Note: Currently in `timidity-player.js`, this object is empty and reserved for future use. No specific properties are implemented yet.)*
+  - `options` *(Object)*: Additional playback configuration.
+    - `volume` *(number, optional)*: Song volume in the range **0–100**. Values outside this range are clamped. When omitted, the current engine volume is preserved (backward-compatible). Applied after `startSong()` / `seek()` so it is not overwritten by mixer resets.
+    - `emitPlaying` *(boolean, optional)*: When `false`, disables the periodic `onPlaying` event emission (useful for headless or synchronized playback). Defaults to `true`.
+
+- **Example:**
+```javascript
+// Resume playback from 30s with volume 50%
+player.play(30, { volume: 50 });
+
+// Play without changing volume (backward-compatible)
+player.play();
+
+// Play without emitting onPlaying events
+player.play(0, { emitPlaying: false });
+```
+
+---
 
 ### `loadAndPlay(midi, offset = 0, options = {})`
-Convenience method to sequentially call `load()` and `play()`.
+Convenience method to sequentially call `load()` and `play()`. The `options` object is forwarded directly to `play()`, so all properties documented for `play()` are supported here.
+
 - **Parameters:**
   - `midi` *(File | Uint8Array)*: The MIDI file data.
   - `offset` *(number)*: Time offset in seconds.
   - `options` *(Object)*: Additional playback configuration.
+    - `volume` *(number, optional)*: Song volume in the range **0–100**. Clamped to valid bounds. Omit to keep the current volume.
+    - `emitPlaying` *(boolean, optional)*: When `false`, suppresses `onPlaying` events. Defaults to `true`.
+
 - **Returns:** `Promise<void>`
+
+- **Example:**
+```javascript
+// Load and immediately play at 70% volume
+await player.loadAndPlay(midiFile, 0, { volume: 70 });
+```
 
 ### `pause()` / `resume()` / `stop()`
 Controls the playback state. `stop()` will also free the currently loaded song from memory.
