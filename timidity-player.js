@@ -1,6 +1,3 @@
-/*
-Link to repository: https://github.com/Planetbiru/LibTiMidityPlayer
-*/
 var Module = {};
 
 Module.timidityReady = false;
@@ -9,8 +6,6 @@ Module.onRuntimeInitialized = function () {
 };
 
 // This must be defined *before* libtimidity.js is loaded and executed.
-// You must include `timidity-player.js` or `timidity-player.min.js` before `libtimidity.js` or `libtimidity.min.js`
-
 Module.preRun = [() => {
     FS.mkdir('/gus-patch');
     FS.createPreloadedFile('/gus-patch', 'timidity.cfg', patchUrlBase + '/timidity.cfg', true, true);
@@ -89,7 +84,6 @@ class TimidityPlayer {
         return new Proxy(this, {
             get(target, prop, receiver) {
                 // Capture access to "onXxx" properties that do not yet exist → turn them into event registrars.
-                // player.onLoaded(func) equals to player.on('onLoaded', func)
                 if (
                     typeof prop === 'string' &&
                     prop.startsWith('on') &&
@@ -787,12 +781,21 @@ class TimidityPlayer {
      * Starts or resumes playback of the currently loaded MIDI song.
      * @param {number} [offset=0] - The time offset in seconds to start playing from.
      * @param {Object} [options={}] - Additional playback options.
+     * @param {number} [options.volume] - The song volume (0-100). If omitted, current volume is preserved.
+     * @param {boolean} [options.emitPlaying=true] - Whether to emit 'onPlaying' events during playback.
      */
     play(offset = 0, options = {}) {
         if (!this.audioContext || this.songPtr === 0) return;
 
         this.c.startSong(this.songPtr); // Prepare song for playback
         if (offset > 0) this.seek(offset); // Seek if offset is provided
+
+        // Apply volume if provided (0-100), clamped to valid range.
+        // Must be applied AFTER startSong/seek because those may reset the mixer state.
+        if (typeof options.volume === 'number' && !isNaN(options.volume)) {
+            const clampedVolume = Math.max(0, Math.min(100, options.volume));
+            this.setVolume(clampedVolume);
+        }
 
         const emitPlaying = options.emitPlaying !== false;
 
@@ -831,7 +834,7 @@ class TimidityPlayer {
 
         if (this.playingInterval) {
             cancelAnimationFrame(this.playingInterval);
-            clearInterval(this.playingInterval); // Fallback in case it was created with setInterval
+            clearInterval(this.playingInterval);
             this.playingInterval = null;
         }
         
