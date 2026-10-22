@@ -8,7 +8,6 @@ Module.onRuntimeInitialized = function () {
 // This must be defined *before* libtimidity.js is loaded and executed.
 Module.preRun = [() => {
     FS.mkdir('/gus-patch');
-    FS.createPreloadedFile('/gus-patch', 'timidity.cfg', patchUrlBase + '/timidity.cfg', true, true);
 }];
 
 Module.printErr = function (text) {
@@ -25,12 +24,24 @@ class TimidityPlayer {
      * Creates a new instance of TimidityPlayer.
      * @param {Object} options - Configuration options for the player.
      * @param {string} [options.patchUrlBase] - Base URL path for loading GUS patches (e.g., 'gus-patch').
+     * @param {Function} [options.timidityCfgLoader] - Optional async provider that returns
+     *   the contents of timidity.cfg as text.
+     * @param {Function} [options.instrumentLoader] - Optional async patch provider called as
+     *   (bank, isDrum, program, file) and expected to return binary GUS patch data.
      * @param {number} [options.bufferSize] - Buffer size for audio processing. Default value is 1024.
      * @param {number} [options.sampleRate] - Sample rate to render PCM. Default value is 44100.
      */
     constructor(options = {}) {
         this.virtualPatchDir = '/gus-patch'; // The absolute path inside the virtual filesystem
         this.patchUrlBase = options.patchUrlBase;
+        this.instrumentLoader = null;
+        if (options.instrumentLoader !== undefined) {
+            this.setInstrumentLoader(options.instrumentLoader);
+        }
+        this.timidityCfgLoader = null;
+        if (options.timidityCfgLoader !== undefined) {
+            this.setTimidityCfgLoader(options.timidityCfgLoader);
+        }
         this.bufferSize = options.bufferSize || 4096;
         this.sampleRate = options.sampleRate || 44100;
         this.Module = Module;
@@ -226,8 +237,8 @@ class TimidityPlayer {
      * Loads the required instrument patch files into the WebAssembly virtual filesystem.
      *
      * This function parses a newline-separated list of patch filenames, ensures
-     * their directories exist inside the VFS, and preloads each patch asynchronously
-     * from the server. It tracks progress and emits events during the loading process.
+     * their directories exist inside the VFS, and loads each patch through the
+     * configured provider or from the server. It tracks progress and emits events.
      *
      * Events emitted:
      * - 'onInstrumentLoading': emitted each time a patch starts or finishes loading,
@@ -236,14 +247,32 @@ class TimidityPlayer {
      *   number of loaded patches.
      *
      * @param {string} patchListString - Newline-separated list of patch filenames to load.
-     * @returns {Promise<void>} Resolves when all required patches are successfully preloaded.
+     * @param {{bank: number, isDrum: boolean, program: number}|null} [instrument=null] -
+     *   Instrument identity to pass to the custom loader for every patch in the list.
+     *   When omitted, identity is resolved from timidity.cfg for each patch filename.
+     * @returns {Promise<void>} Resolves when all required patches are loaded.
      */
-    async _loadRequiredPatches(patchListString) {
+    async _loadRequiredPatches(patchListString, instrument = null) {
         if (!patchListString) return Promise.resolve();
 
         const requiredPatches = patchListString.split('\n').filter(p => p.length > 0);
         const total = requiredPatches.length;
         if (total === 0) return Promise.resolve();
+
+        let instrumentsByFile = new Map();
+        if (this.instrumentLoader && !instrument) {
+            const config = await this._loadTimidityCfg();
+            for (const [bank, entries] of config.banks) {
+                for (const entry of entries) {
+                    instrumentsByFile.set(entry.file, { bank, isDrum: false, program: entry.id });
+                }
+            }
+            for (const [bank, entries] of config.drums) {
+                for (const entry of entries) {
+                    instrumentsByFile.set(entry.file, { bank, isDrum: true, program: entry.id });
+                }
+            }
+        }
 
         let loadedCount = 0;
         this.emit('onInstrumentLoading', loadedCount, total, '');
@@ -255,31 +284,23 @@ class TimidityPlayer {
                 return this.loadedPatches.get(file);
             }
             
-            // Construct the virtual path using the dedicated virtual directory property.
-            // This path is used inside the WebAssembly filesystem.
-            const fullVirtualPath = `${this.virtualPatchDir}/${file}`; // e.g., /gus-patch/pat/0/arachno-000.pat
-            this.Module.FS.mkdirTree(this.Module.PATH.dirname(fullVirtualPath)); // Create /gus-patch/pat/0 inside VFS
+            const patchInstrument = instrument || instrumentsByFile.get(file);
+            if (this.instrumentLoader && !patchInstrument) {
+                throw new Error(`Cannot resolve bank, drum status, and program for patch: ${file}`);
+            }
 
-            const promise = new Promise((resolve, reject) => {
-                try {
-                    let url = `${this.patchUrlBase}/${file}`;
-                    this.Module.FS.createPreloadedFile(this.Module.PATH.dirname(fullVirtualPath), this.Module.PATH.basename(file), url, true, true, resolve, reject); // Preload from server
-                } catch (e) {
-                    if (e.name === 'ErrnoError' || (e.message && e.message.includes('File exists'))) {
-                        resolve();
-                    } else {
-                        console.warn("Patch loading error:", file, e);
-                        reject(e);
-                    }
-                }
-            }).then(() => {
+            const promise = this._loadInstrumentPatch(
+                patchInstrument ? patchInstrument.bank : 0,
+                patchInstrument ? patchInstrument.isDrum : false,
+                patchInstrument ? patchInstrument.program : 0,
+                file
+            ).then(() => {
                 loadedCount++;
                 this.emit('onInstrumentLoading', loadedCount, total, file);
-            }).catch(e => {
-                console.warn("Failed to load patch asynchronously:", file, e);
             });
 
             this.loadedPatches.set(file, promise);
+            promise.catch(() => this.loadedPatches.delete(file));
             return promise;
         });
 
@@ -289,9 +310,79 @@ class TimidityPlayer {
     }
 
     /**
+     * Loads one patch through the configured provider, or from the server when no
+     * provider is configured, then stores it at the path expected by libTiMidity.
+     * @param {number} bank - Instrument bank or drumset number.
+     * @param {boolean} isDrum - Whether the requested patch belongs to a drumset.
+     * @param {number} program - Program number, or drum note number for a drum patch.
+     * @param {string} file - Relative GUS patch path, used by the provider or server loader.
+     * @returns {Promise<void>}
+     * @private
+     */
+    async _loadInstrumentPatch(bank, isDrum, program, file) {
+        const fullVirtualPath = `${this.virtualPatchDir}/${file}`;
+        const directory = this.Module.PATH.dirname(fullVirtualPath);
+        const filename = this.Module.PATH.basename(fullVirtualPath);
+        this.Module.FS.mkdirTree(directory);
+
+        if (this.instrumentLoader) {
+            const patchData = await this.instrumentLoader(bank, isDrum, program, file);
+            let bytes;
+            if (patchData instanceof Uint8Array) {
+                bytes = patchData;
+            } else if (patchData instanceof ArrayBuffer) {
+                bytes = new Uint8Array(patchData);
+            } else if (ArrayBuffer.isView(patchData)) {
+                bytes = new Uint8Array(patchData.buffer, patchData.byteOffset, patchData.byteLength);
+            } else if (typeof Blob !== 'undefined' && patchData instanceof Blob) {
+                bytes = new Uint8Array(await patchData.arrayBuffer());
+            } else {
+                throw new TypeError(`instrumentLoader must return binary patch data for: ${file}`);
+            }
+            this.Module.FS.writeFile(`${directory}/${filename}`, bytes);
+            return;
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                const url = `${this.patchUrlBase}/${file}`;
+                this.Module.FS.createPreloadedFile(directory, filename, url, true, true, resolve, reject);
+            } catch (e) {
+                if (e.name === 'ErrnoError' || (e.message && e.message.includes('File exists'))) {
+                    resolve();
+                } else {
+                    console.warn("Patch loading error:", file, e);
+                    reject(e);
+                }
+            }
+        });
+    }
+
+    /**
+     * Sets or clears the callback used to retrieve instrument patch data.
+     * @param {Function|null} loader - Called as (bank, isDrum, program, file) and
+     *   must return binary GUS patch data, optionally asynchronously.
+     */
+    setInstrumentLoader(loader) {
+        if (loader !== null && typeof loader !== 'function') {
+            throw new TypeError('instrumentLoader must be a function or null');
+        }
+        this.instrumentLoader = loader;
+    }
+
+    /**
      * Parses the raw MIDI data to extract the division and all tempo changes.
-     * @param {Uint8Array} midiData 
-     * @returns {Object} { division, timeMap: [{tick, timeSec, mpqn}] }
+     * @param {Uint8Array} midiData - Complete Standard MIDI File data to parse.
+     * @returns {{
+     *   division: number,
+     *   timeMap: Array<{tick: number, timeSec: number, mpqn: number}>,
+     *   measureMap: Array<{tick: number, absBeat: number, measure: number, num: number, denom: number, ticksPerBeat: number}>,
+     *   tracksCount: number,
+     *   trackNames: string[],
+     *   trackHasNotes: boolean[],
+     *   maxTick: number,
+     *   totalSeconds: number
+     * }} Tempo, time-signature, track, and duration metadata.
      * @private
      */
     _buildTempoMap(midiData) {
@@ -516,9 +607,11 @@ class TimidityPlayer {
             this.audioContext.suspend();
         }
 
-        return this._waitForRuntime().then(() => {
+        return this._waitForRuntime().then(async () => {
+            const config = await this._loadTimidityCfg();
             // Use the virtual path for initialization inside the WASM module.
             const configPath = `${this.virtualPatchDir}/timidity.cfg`;
+            this.Module.FS.writeFile(configPath, config.text);
             const rc = this.c.init(configPath); // Initialize libTiMidity with config file from VFS
             if (rc === 0) {
                 if (!offline) {
@@ -591,6 +684,8 @@ class TimidityPlayer {
     /**
      * Initializes the real-time synthesizer song instance if it hasn't been created yet.
      * This prepares an empty song specifically used for real-time MIDI input.
+     * @param {Object} [options={}] - Options for creating the real-time song.
+     * @param {number} [options.bufferSize=1024] - Audio buffer size in samples.
      * @returns {Promise<void>}
      */
     initRealtimeSong(options = {}) {
@@ -637,6 +732,9 @@ class TimidityPlayer {
     /**
      * Resends active notes to the synthesizer. Useful when seeking or changing instruments
      * to ensure sustained notes continue playing correctly.
+     * @param {number} [channel=-1] - MIDI channel (0-15) to resend notes for, or -1
+     *   to resend active notes for all channels.
+     * @returns {void}
      */
     resendActiveNotes(channel = -1) {
         if (this.songPtr !== 0) {
@@ -1570,7 +1668,7 @@ class TimidityPlayer {
         const patchListString = this.c.getRequiredPatches(streamPtr);
         this.c.closeStream(streamPtr);
         this.Module._free(dummyMidiPtr);
-        return this._loadRequiredPatches(patchListString).then(() => this.c.loadProgram(this.songPtr, bank, program, isDrum) === 0);
+        return this._loadRequiredPatches(patchListString, { bank, isDrum, program }).then(() => this.c.loadProgram(this.songPtr, bank, program, isDrum) === 0);
     }
 
     /**
@@ -1967,14 +2065,20 @@ class TimidityPlayer {
      * Loads and parses timidity.cfg to extract bank and drumset information.
      */
     async _loadTimidityCfg() {
-        if (this._cfgData) return Promise.resolve(this._cfgData);
-        return fetch(`${this.patchUrlBase}/timidity.cfg`)
-            .then(response => {
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return response.text();
-            })
-            .then(text => {
-
+        if (this._cfgData) return this._cfgData;
+        if (!this._cfgPromise) {
+            this._cfgPromise = (async () => {
+                let text;
+                if (this.timidityCfgLoader) {
+                    text = await this.timidityCfgLoader();
+                    if (typeof text !== 'string') {
+                        throw new TypeError('timidityCfgLoader must return timidity.cfg contents as a string');
+                    }
+                } else {
+                    const response = await fetch(`${this.patchUrlBase}/timidity.cfg`);
+                    if (!response.ok) throw new Error(`Failed to load timidity.cfg: HTTP ${response.status}`);
+                    text = await response.text();
+                }
                 const banks = new Map();
                 const drums = new Map();
 
@@ -2009,13 +2113,29 @@ class TimidityPlayer {
                     }
                 }
 
-                this._cfgData = { banks, drums };
+                this._cfgData = { text, banks, drums };
                 return this._cfgData;
-            })
-            .catch(e => {
-                console.error("Failed to load timidity.cfg:", e);
-                return { banks: new Map(), drums: new Map() };
+            })().catch(error => {
+                this._cfgPromise = null;
+                console.error('Failed to load timidity.cfg:', error);
+                throw error;
             });
+        }
+        return this._cfgPromise;
+    }
+
+    /**
+     * Sets or clears the callback used to retrieve timidity.cfg.
+     * @param {Function|null} loader - Callback returning the configuration text,
+     *   optionally asynchronously.
+     */
+    setTimidityCfgLoader(loader) {
+        if (loader !== null && typeof loader !== 'function') {
+            throw new TypeError('timidityCfgLoader must be a function or null');
+        }
+        this.timidityCfgLoader = loader;
+        this._cfgData = null;
+        this._cfgPromise = null;
     }
 
     /**

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The changes in this release were specifically made to meet the requirements for integrating the **MIDI Player into a Digital Audio Workstation (DAW)**.
 
+## [0.1.0] - 2026-11-01
+
+### Added
+
+**JavaScript API / Instrument Loading**
+- Added the `timidityCfgLoader()` option and `setTimidityCfgLoader(loader)` method to provide `timidity.cfg` contents from a custom source instead of fetching the file from `patchUrlBase`.
+- Added the `instrumentLoader(bank, isDrum, program, file)` option to load GUS patch data from a custom source instead of downloading patch files from the server. Supports synchronous or asynchronous providers returning binary patch data.
+- Added `setInstrumentLoader(loader)` to configure or clear the custom instrument provider after player creation.
+- Documented each instrument loader argument to support GUS Patch editors, including manually created patches and patches imported from soundfonts.
+
 ## [Unreleased]
 
 ### Added

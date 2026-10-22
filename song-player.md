@@ -2,7 +2,7 @@
 
 `SongPlayer` extends `TimidityPlayer` with **audio-clip playback**, **simultaneous MIDI + audio**, **repeated playback**, and **offline rendering** (merged or per-track, mono or stereo).
 
-It does not modify `TimidityPlayer`; it adds a layer on top. All existing TimidityPlayer methods (`load`, `play`, `seek`, `setMasterVolume`, `setTranspose`, `sendEvent`, `resume`, `pause`, `stop`, `noteOn`, `noteOff`, `renderOffline`, `getBankList`, …) keep working as documented in the upstream repo.
+It does not modify `TimidityPlayer`; it adds a layer on top. All existing TimidityPlayer methods (`load`, `play`, `seek`, `setMasterVolume`, `setTranspose`, `sendEvent`, `resume`, `pause`, `stop`, `noteOn`, `noteOff`, `renderOffline`, `getBankList`, …) keep working as documented in [API.md](./API.md).
 
 ---
 
@@ -12,7 +12,7 @@ It does not modify `TimidityPlayer`; it adds a layer on top. All existing Timidi
 <script>window.patchUrlBase = '.../gus-patch';</script>
 <script src="timidity-player.js"></script>
 <script src="libtimidity.js"></script>
-<script src="SongPlayer.js"></script>
+<script src="song-player.js"></script>
 ```
 
 `window.SongPlayer` is created. Requires the WASM `Module` to be present (i.e. `timidity-player.js` + `libtimidity.js` already loaded).
@@ -56,7 +56,7 @@ player.setAudioTracks([
   },
 ]);
 
-// 3) Load MIDI (or skip for audio-only)
+// 3) Load MIDI (or skip for audio-only offline render)
 await player.load('data:audio/midi;base64,...');
 
 // 4) Play
@@ -74,24 +74,24 @@ await player.play();               // play() is async now — see §3.5
 new SongPlayer({ patchUrlBase, bufferSize = 4096, sampleRate = 44100 })
 ```
 
-Same options as `TimidityPlayer`.
+Same options as `TimidityPlayer`. See [API.md § Constructor](./API.md#constructor) for full details.
 
 ### 3.2 Audio assets
 
 | Method | Description |
 |---|---|
-| `await loadAudioAsset(id, arrayBuffer, metadata?)` | Decode ArrayBuffer → AudioBuffer, register as `id`. |
-| `await loadAudioAssetFromUrl(id, url, metadata?)` | Fetch + decode + register. |
+| `await loadAudioAsset(id, arrayBuffer, metadata?)` | Decode ArrayBuffer → AudioBuffer, register as `id`. Metadata keys are auto-converted to camelCase. |
+| `await loadAudioAssetFromUrl(id, url, metadata?)` | Fetch + decode + register. Throws on HTTP error. |
 | `setAudioAsset(id, audioBuffer, metadata?)` | Register a pre-decoded AudioBuffer. |
-| `getAudioAsset(id)` | Returns the record `{ audioBuffer, ...metadata }`. |
-| `removeAudioAsset(id)` | Unregister. |
+| `getAudioAsset(id)` | Returns the record `{ audioBuffer, ...metadata }` or `undefined`. |
+| `removeAudioAsset(id)` | Unregister and allow GC. |
 
 ### 3.3 Audio tracks
 
 ```js
-player.setAudioTracks([ ... ]);
-player.addAudioTrack({ id, name, muted, solo, clips: [...] });
-player.clearAudioTracks();
+player.setAudioTracks([ ... ]);                          // replace all tracks
+player.addAudioTrack({ id, name, muted, solo, clips: [...] });  // append one
+player.clearAudioTracks();                               // remove all
 ```
 
 Each **track** object:
@@ -108,18 +108,19 @@ Each **track** object:
 Each **clip** object:
 ```js
 {
-  id,                        // any stable identifier
+  id,                        // any stable identifier (used as the active-clip key)
   audioAssetId,              // must exist in player.audioAssets
-  startTick,                 // where the clip begins on the timeline
-  trimmedDurationTicks,      // how long the clip plays
-  trimStartOffsetTicks,      // offset into the source asset
+  startTick,                 // where the clip begins on the timeline (MIDI ticks)
+  trimmedDurationTicks,      // how long the clip plays (MIDI ticks)
+  trimStartOffsetTicks,      // offset into the source asset (MIDI ticks)
   volume,                    // 0..1 (default 1)
+  isDeleted,                 // if true, clip is ignored during playback and rendering
   fadeIn:  { enable, from, to, shape },  // from/to in SECONDS, clip-relative
   fadeOut: { enable, from, to, shape }   // shape: 'linear' | 'easeIn' | 'easeOut'
 }
 ```
 
-> **Timing convention** — `startTick` and `trimmedDurationTicks` are in **MIDI ticks**. They are converted to seconds using the MIDI tempo map. Fade `from`/`to` are in **seconds relative to the clip's start**.
+> **Timing convention** — `startTick`, `trimmedDurationTicks`, and `trimStartOffsetTicks` are in **MIDI ticks**. They are converted to seconds using the MIDI tempo map (or a default 120 BPM / 480 PPQ fallback if no MIDI is loaded). Fade `from`/`to` are in **seconds relative to the clip's start**.
 
 ### 3.4 Song duration
 
@@ -127,14 +128,14 @@ Each **clip** object:
 player.getSongDuration(); // → number (seconds)
 ```
 
-Equal to `max(MIDI duration, end-time of every clip)`. Ensures audio longer than MIDI is never truncated. Works even with **empty MIDI**.
+Equal to `max(MIDI duration, end-time of every non-deleted clip)`. Ensures audio longer than MIDI is never truncated. Works even with **empty MIDI** (returns the latest clip end time).
 
 ### 3.5 Playback
 
 `play`, `pause`, `stop`, `seek` are overridden to manage audio clips and to support **repeated playback** after a song has finished.
 
 ```js
-await player.play(offsetSeconds = 0);
+await player.play(offsetSeconds = 0, options = {});
 player.pause();
 player.stop();
 player.seek(timeInSeconds);
@@ -146,13 +147,13 @@ Behaviour:
 | Call | Effect |
 |---|---|
 | `play()` while already playing | No-op (re-entrancy guard prevents the WASM engine freeze). |
-| `play()` while paused | Resumes from the last position. Does not reload. |
+| `play()` while paused | Resumes from the last position via `resume()`. Does not reload. |
 | `play()` after the song ended | **Reloads the MIDI from cache (`lastMidiData`) automatically**, then starts from `offset` (default 0). |
-| `play()` before any MIDI loaded | Logs a warning; only MIDI-driven playback is supported at the moment. |
+| `play()` before any MIDI loaded | Logs a warning; audio-only real-time playback is not supported (offline render works). |
 | `pause()` | Stops MIDI + all audio clips. `resume()` continues both from the current position. |
-| `stop()` | Fully stops MIDI (frees the song pointer). Next `play()` will reload. |
+| `stop()` | Fully stops MIDI (frees the song pointer) and all clips. Next `play()` will reload. |
 | `seek(t)` | Stops all clips, re-enters them from position `t` (offset preserved). |
-| `restart()` | If playing → seek(0). If paused → resume + seek(0). If finished → `play(0)` (reloads). |
+| `restart()` | If playing → `seek(0)`. If paused → `resume()` then `seek(0)`. If finished → `play(0)` (reloads). |
 
 `play()` returns a `Promise<void>` — `await` it if you need to ensure playback has actually started (recommended after `render()` or after the first user gesture).
 
@@ -160,7 +161,7 @@ Behaviour:
 
 ### 3.6 Events
 
-All `TimidityPlayer` events fire normally. `SongPlayer` adds one:
+All `TimidityPlayer` events fire normally (see [API.md § Events](./API.md#supported-events)). `SongPlayer` adds one new event and also extends the `on` / `off` API:
 
 | Event | Payload | Description |
 |---|---|---|
@@ -171,22 +172,24 @@ All `TimidityPlayer` events fire normally. `SongPlayer` adds one:
 - `onEnded` — MIDI is over. **Audio clips keep playing** if their end time exceeds the MIDI duration. Do **not** treat this as end-of-song.
 - `onSongFinished` — everything is over. Stop button state, reset UI, etc.
 
-**Listener API** — `on`, `once`, `off`, `offAll`:
+**Extended Listener API** — `on`, `once`, `off`, `offAll`:
 
 ```js
 // Register
 const cb = (tick, sec) => drawPlayhead(sec);
 player.on('onPlaying', cb);          // explicit
-player.onPlaying(cb);                // proxy — same thing
+player.onPlaying(cb);                // proxy — same thing (inherited from TimidityPlayer)
 
-// Fire once
+// Fire once, then auto-removes itself
 player.once('onSongFinished', () => toast('Done!'));
 
 // Unregister
 player.off('onPlaying', cb);
 player.offAll('onPlaying');          // remove all listeners for an event
-player.offAll();                     // remove all listeners
+player.offAll();                     // remove all listeners for ALL events
 ```
+
+> **`off` / `offAll` / `once`** are added by `SongPlayer` — they are not part of the base `TimidityPlayer`.
 
 Listener ordering:
 
@@ -195,13 +198,15 @@ Listener ordering:
 
 ### 3.7 Virtual clock (post-MIDI audio tail)
 
-When the MIDI ends **before** the last audio clip, `SongPlayer` starts an internal *virtual clock* driven by `AudioContext.currentTime`. From that point on:
+When the MIDI ends **before** the last audio clip, `SongPlayer` starts an internal *virtual clock* driven by `requestAnimationFrame` and `AudioContext.currentTime`. From that point on:
 
 - `onPlaying` continues to fire with the correct `songTime` and `tick` (tick computed from the tempo map).
 - Audio clips continue to be scheduled and stopped correctly.
 - When `songTime >= getSongDuration()`, the clock stops and `onSongFinished` fires.
 
 You don't need to do anything — just listen to `onSongFinished` instead of `onEnded` for "song truly done".
+
+Override points: `_startPostMidiClock`, `_stopPostMidiClock`, `_finalizePostMidi`.
 
 ### 3.8 Offline rendering
 
@@ -218,12 +223,12 @@ Options:
 | `sampleRate` | number | `this.sampleRate` | Output sample rate. |
 | `bufferSize` | number | `this.bufferSize` | Render buffer size passed to libTiMidity. |
 | `channels` | `'stereo'` \| `'mono'` | `'stereo'` | Output channel count. |
-| `onProgress` | `(pct, label) => void` | `null` | Progress callback (0..100). |
+| `onProgress` | `(pct: number, label: string) => void` | `null` | Progress callback (0..100) with a label describing the current step. |
 
 Return values:
 
 - `mode: 'merged'` → `Promise<Blob>` (a single WAV).
-- `mode: 'per-track'` → `Promise<Array<{ type: 'midi' | 'audio', trackIndex, name, blob }>>`.
+- `mode: 'per-track'` → `Promise<Array<{ type: 'midi' | 'audio', trackIndex: number, name: string, blob: Blob }>>`.
 
 Behaviour notes:
 
@@ -231,8 +236,9 @@ Behaviour notes:
 - `per-track` mode renders each track **independently** (ignoring mute/solo).
 - MIDI tracks are rendered via `TimidityPlayer.renderOffline({ soloTrack })`.
 - Audio tracks are rendered via a fresh `OfflineAudioContext` per track.
+- Clips where `isDeleted === true` are **skipped** in all render modes.
 - If the MIDI is empty (or absent), only audio tracks are rendered.
-- If a track has no clips, its WAV will just be silent (correct length).
+- If a track has no clips, its WAV will be silent (correct length).
 
 ### 3.9 Bundle loader
 
@@ -245,15 +251,44 @@ await player.loadBundle({
 });
 ```
 
-Convenience method that wires up assets, tracks and MIDI in one call. Returns a summary `{ duration, midiTracks, audioTracks, audioAssets }`.
+Convenience method that wires up assets, tracks and MIDI in one call. All object keys are normalized from `snake_case` to `camelCase` automatically. Returns a summary:
+
+```js
+{
+  duration,     // getSongDuration() after loading
+  midiTracks,   // number of MIDI tracks parsed
+  audioTracks,  // number of audio tracks set
+  audioAssets   // number of audio assets registered
+}
+```
+
+### 3.10 Key conversion utilities
+
+`SongPlayer` includes helper methods for normalizing object keys, used internally by `loadBundle` and asset loaders:
+
+| Method | Description |
+|---|---|
+| `toCamelCaseKeys(input)` | Recursively converts all keys in an object/array from `snake_case` to `camelCase`. |
+| `toSnakeCaseKeys(input)` | Recursively converts all keys in an object/array from `camelCase` to `snake_case`. |
+| `snakeToCamel(str)` | Converts a single `snake_case` string to `camelCase`. |
+| `camelToSnake(str)` | Converts a single `camelCase` string to `snake_case`. |
 
 ---
 
 ## 4. Extending the class
 
-`SongPlayer` is a normal ES class. Override `_syncAudioClips`, `_scheduleTrackOffline`, `_applyClipGainSchedule`, or `_startClip` to customise clip scheduling.
+`SongPlayer` is a normal ES class. Override these protected methods to customise behaviour:
 
-You can also override `_startPostMidiClock`, `_stopPostMidiClock`, or `_finalizePostMidi` to change the virtual-clock behaviour.
+| Method | Purpose |
+|---|---|
+| `_syncAudioClips(songTime)` | Called on every `onPlaying` tick to start/stop clips. |
+| `_startClip(clip, trackIndex, offsetInClip, duration, when)` | Schedules one clip on the `AudioContext`. |
+| `_stopClip(key)` | Stops and disconnects a single active clip. |
+| `_applyClipGainSchedule(gainNode, clip, offsetInClip, when)` | Applies volume, fade-in, and fade-out gain automation. |
+| `_scheduleTrackOffline(offlineCtx, track, destination)` | Schedules all clips of a track into an `OfflineAudioContext`. |
+| `_startPostMidiClock()` | Starts the virtual clock after MIDI ends. |
+| `_stopPostMidiClock()` | Cancels the virtual clock RAF loop. |
+| `_finalizePostMidi()` | Fires `onSongFinished` and cleans up. |
 
 ---
 
@@ -270,17 +305,20 @@ You can also override `_startPostMidiClock`, `_stopPostMidiClock`, or `_finalize
 | Audio clip playback | ❌ | ✅ |
 | Multi-asset clips with offset | ❌ | ✅ |
 | Fade in / fade out | ❌ | ✅ |
-| MIDI + audio simultan | ❌ | ✅ |
+| MIDI + audio simultaneous | ❌ | ✅ |
 | Audio tail beyond MIDI end | ❌ | ✅ (virtual clock) |
 | Duration = max(MIDI, audio) | ❌ | ✅ |
-| Empty-MIDI (audio only) | ❌ | ✅ (render only, see §7) |
+| Empty-MIDI (audio only) | ❌ | ✅ (render only, see §8) |
 | Offline render (MIDI) | ✅ | ✅ |
 | Offline render (audio) | ❌ | ✅ |
 | Offline render merged | partial | ✅ |
-| Offline render per-track | partial (`exportStems`) | ✅ (returns array) |
+| Offline render per-track | partial (`exportStems`) | ✅ (returns array with metadata) |
 | MONO / stereo render option | ✅ | ✅ |
 | Configurable sample rate / buffer size | ✅ | ✅ |
 | `once` / `off` / `offAll` listeners | ❌ | ✅ |
+| Bundle loader (`loadBundle`) | ❌ | ✅ |
+| snake_case ↔ camelCase key normalization | ❌ | ✅ |
+| `isDeleted` clip flag | ❌ | ✅ |
 
 ---
 
@@ -311,18 +349,53 @@ player.on('onSongFinished',  (t)         => console.log('Song finished at', t));
 
 ---
 
-## 7. Notes & gotchas
+## 7. Example: loadBundle
 
-- **User gesture required.** `player.init()` and `player.resume()` must be called from inside a click/keypress handler, per browser autoplay policy.
-- **`startTick` units.** Clip timing uses MIDI ticks, not seconds. When MIDI is loaded, ticks → seconds uses that MIDI's tempo map. Without MIDI, a default 120 BPM / 480 PPQ is assumed.
-- **Fade units.** Fades are seconds relative to the clip start. If you seek into the middle of the clip and the fade-in has already finished, its effect is not re-applied; the effective gain at the seek point is used.
-- **Real-time sync drift.** Audio clips are scheduled on the same `AudioContext` as the MIDI, with a 50 ms lookahead window. Under normal conditions this yields sample-accurate playback. Avoid heavy synchronous work on the main thread.
-- **Virtual clock after MIDI end.** When MIDI ends before the last clip, `SongPlayer` starts an internal rAF-driven clock that keeps `onPlaying` and clip sync alive until `getSongDuration()` is reached. `onStop` and `onEnded` from the base class are **not** used to stop clips.
-- **`onEnded` vs `onSongFinished`.** Use `onSongFinished` to detect end-of-song. `onEnded` only means "MIDI is over"; audio may still be playing.
-- **Repeated `play()`.** Calling `play()` after a song has finished will transparently reload the MIDI and start over. Do not manually call `load()` again.
-- **Rendering while playing.** `render()` internally pauses playback. If you were playing before calling `render()`, you may need to call `play()` again afterwards.
-- **Empty-MIDI real-time playback is not supported yet.** `TimidityPlayer.play()` needs an active song pointer to drive the clock. Audio-only real-time playback requires a MIDI-less clock, which is not implemented. Audio-only **offline rendering** works fine.
-- **Memory.** Audio assets stay in `player.audioAssets` until removed; call `removeAudioAsset(id)` for long sessions.
+```js
+const player = new SongPlayer({ patchUrlBase });
+await player.init();
+await player.resume();
+
+const summary = await player.loadBundle({
+    midiContent: base64MidiString,
+    audioAssetsMetadata: [
+        { audioAssetId: 'drums', fileExtension: 'wav' },
+        { audioAssetId: 'bass',  fileExtension: 'wav' },
+    ],
+    audioTracksMetadata: [
+        {
+            id: 1, name: 'Drums', muted: false, solo: false,
+            audioClips: [
+                { audioAssetId: 'drums', startTick: 0, trimmedDurationTicks: 3840,
+                  trimStartOffsetTicks: 0, volume: 1.0 }
+            ]
+        }
+    ],
+    assetFetcher: async (meta) => {
+        const r = await fetch(`/audio/${meta.audioAssetId}.${meta.fileExtension}`);
+        return r.arrayBuffer();
+    }
+});
+console.log('Duration:', summary.duration, 'Audio tracks:', summary.audioTracks);
+await player.play();
+```
 
 ---
 
+## 8. Notes & gotchas
+
+- **User gesture required.** `player.init()` and `player.resume()` must be called from inside a click/keypress handler, per browser autoplay policy.
+- **`startTick` units.** Clip timing uses MIDI ticks, not seconds. When MIDI is loaded, ticks → seconds uses that MIDI's tempo map. Without MIDI, a default 120 BPM / 480 PPQ is assumed (via `_ensureTempoMap()`).
+- **Fade units.** Fades are seconds relative to the clip start. If you seek into the middle of the clip and the fade-in has already finished, its effect is not re-applied; the effective gain at the seek point is used.
+- **`isDeleted` flag.** Setting `clip.isDeleted = true` causes the clip to be skipped during both real-time playback and offline rendering without needing to rebuild the tracks array.
+- **Real-time sync lookahead.** Audio clips are scheduled with a 50 ms lookahead window on the same `AudioContext` as the MIDI. Under normal conditions this yields sample-accurate playback. Avoid heavy synchronous work on the main thread.
+- **Virtual clock after MIDI end.** When MIDI ends before the last clip, `SongPlayer` starts an internal rAF-driven clock that keeps `onPlaying` and clip sync alive until `getSongDuration()` is reached. `onStop` and `onEnded` from the base class are **not** used to stop clips.
+- **`onEnded` vs `onSongFinished`.** Use `onSongFinished` to detect end-of-song. `onEnded` only means "MIDI is over"; audio may still be playing.
+- **Repeated `play()`.** Calling `play()` after a song has finished will transparently reload the MIDI and start over. Do not manually call `load()` again.
+- **Rendering while playing.** `render()` internally uses `TimidityPlayer.renderOffline()` which pauses playback. If you were playing before calling `render()`, you may need to call `play()` again afterwards.
+- **Empty-MIDI real-time playback is not supported.** `TimidityPlayer.play()` needs an active song pointer to drive the clock. Audio-only real-time playback requires a MIDI-less clock, which is not implemented. Audio-only **offline rendering** works fine.
+- **Memory.** Audio assets stay in `player.audioAssets` until removed; call `removeAudioAsset(id)` for long sessions.
+- **`off` and `offAll` are SongPlayer-only.** The base `TimidityPlayer` does not have these methods. If you use `SongPlayer`, always use its `off` / `offAll` / `once` API.
+- **Bundle key normalization.** `loadBundle` automatically converts all `snake_case` keys to `camelCase`. You may pass either format in metadata objects.
+
+---

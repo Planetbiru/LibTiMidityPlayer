@@ -8,11 +8,97 @@
 Creates a new instance of the TimidityPlayer.
 - **Parameters:**
   - `options` *(Object)*: Configuration options.
-    - `options.patchUrlBase` *(string)*: Base URL path for loading GUS patches and `timidity.cfg` (e.g., `'gus-patch'`).
+    - `options.patchUrlBase` *(string)*: Base URL path for loading GUS patches and, unless `timidityCfgLoader` is set, `timidity.cfg` (e.g., `'gus-patch'`).
+    - `options.timidityCfgLoader` *(Function)*: Optional provider called without
+      arguments. It must return the contents of `timidity.cfg` as a string and may
+      return a promise.
+    - `options.instrumentLoader` *(Function)*: Optional patch provider. Called as
+      `instrumentLoader(bank, isDrum, program, file)` and must return GUS patch data
+      as a `Uint8Array`, `ArrayBuffer`, typed-array view, or `Blob`. It can be async.
     - `options.buffserSize` *(number)*: Buffer size for audio processing. Default value is 4096. 
       **Note**: A larger buffer size increases stability and reduces glitches, but it also introduces more latency, making real-time response (e.g., when playing notes from a MIDI controller) slower.
     - `options.bufferSizeRealtime` *(number)* - Buffer size for realtime event (e.g noteOn). Default value is 1024
     - `options.sampleRate` *(number)*: Sample rate to render PCM. Default value is 44100.
+
+---
+
+## Instrument Data Source
+
+### Providing `timidity.cfg`
+
+By default, the player fetches `timidity.cfg` from
+`patchUrlBase/timidity.cfg`. To load it from another class or source, configure
+`timidityCfgLoader`. The loader must return the full text of a TiMidity
+configuration file. It can return the text synchronously or as a promise:
+
+```javascript
+const patchLibrary = new PatchLibrary();
+const player = new TimidityPlayer({
+  patchUrlBase: 'gus-patch',
+  timidityCfgLoader: () => patchLibrary.getTimidityConfig()
+});
+```
+
+The configuration is used to initialize the TiMidity engine and to provide bank,
+instrument, and drumset lists through the JavaScript API. The player writes the
+custom configuration to its WebAssembly virtual filesystem before engine
+initialization. When `timidityCfgLoader` is set, the player does not fetch
+`timidity.cfg` from `patchUrlBase`. Configure the loader before calling `init()`.
+
+### Providing GUS patches
+
+By default, required GUS patch files are downloaded from `patchUrlBase`. To get
+patches from another class or storage source (for example, an editor or imported
+soundfont), configure `instrumentLoader`. The callback returns binary GUS patch
+data. The player writes those bytes to its WebAssembly virtual filesystem, where
+libTiMidity reads them.
+
+The callback receives information about the requested instrument:
+
+| Argument | Type | Meaning |
+|---|---|---|
+| `bank` | `number` | The instrument bank number, or drumset number when `isDrum` is `true`. This follows the TiMidity configuration, such as `bank 0` or `drumset 0` in `timidity.cfg`. |
+| `isDrum` | `boolean` | `true` when the requested instrument belongs to a drumset; `false` for a melodic instrument. |
+| `program` | `number` | The instrument number within the bank (usually 0–127). For a drumset, this is the requested drum instrument/note number. |
+| `file` | `string` | The relative path of the required GUS patch file, from its `timidity.cfg` entry (for example, `melodic/000_Acoustic_Grand.pat`). Use it to look up patch data by filename or as an additional key alongside the bank/program mapping. |
+
+`bank`, `isDrum`, and `program` identify the instrument logically; `file` identifies
+the GUS patch required by the engine. Use these values to look up the matching
+patch and return its binary data. For example:
+
+```javascript
+const patchEditor = new GusPatchEditor();
+const player = new TimidityPlayer({
+  patchUrlBase: 'gus-patch',
+  instrumentLoader: (bank, isDrum, program, file) =>
+    patchEditor.getGusPatch({ bank, isDrum, program, file })
+});
+```
+
+For MIDI playback, the bank, drum status, and program are resolved from
+`timidity.cfg`. Calls that explicitly load a program (such as realtime instrument
+selection) pass their bank, drum status, and program directly to the loader. If the
+callback is configured but no instrument can be resolved, or it returns a value
+that is not binary patch data, patch loading rejects instead of falling back to
+server downloads.
+
+### `setTimidityCfgLoader(loader)`
+Sets or clears the configuration provider after creating the player. Call this
+before `init()`, because the configuration is read when the TiMidity engine starts.
+Pass `null` to restore loading `timidity.cfg` from `patchUrlBase`.
+
+- **Parameters:**
+  - `loader` *(Function | null)*: Callback with no arguments that returns the full
+    `timidity.cfg` contents as a string, optionally asynchronously.
+
+### `setInstrumentLoader(loader)`
+Sets or clears the patch provider after creating the player. Configure it before
+the relevant patch has been loaded. Pass `null` to restore the default
+server-based patch loading.
+
+- **Parameters:**
+  - `loader` *(Function | null)*: Callback with the same signature and return value
+    as `options.instrumentLoader`.
 
 ---
 
