@@ -371,28 +371,62 @@ class TimidityPlayer {
     }
 
     /**
-     * Parses the raw MIDI data to extract the division and all tempo changes.
+     * Parses raw Standard MIDI File (SMF) data to extract:
+     *  - the timing division (ticks per quarter note),
+     *  - the tempo (Set Tempo / 0x51) timeline,
+     *  - the time-signature (0x58) timeline,
+     *  - per-track metadata (names, whether the track contains channel events),
+     *  - and per-channel program (Program Change / 0xCn), Bank Select MSB (CC 0),
+     *    and Bank Select LSB (CC 32) event lists.
+     *
+     * The resulting object is stored as `this.tempoMap` and consumed by tick↔time
+     * conversion helpers (`tickToTime`, `timeToTick`, `goTo`), metronome helpers
+     * (`tickToBeat`, `tickToMeasure`, `getMetronome`), and the per-channel
+     * instrumentation lookup helpers (`getProgram`, `getBank`).
+     *
+     * The per-channel maps are arrays of length 16 (indexed by MIDI channel 0–15),
+     * where each inner array is sorted by ascending `tick`. They are suitable for
+     * linear scan / binary search by tick.
+     *
      * @param {Uint8Array} midiData - Complete Standard MIDI File data to parse.
      * @returns {{
      *   division: number,
      *   timeMap: Array<{tick: number, timeSec: number, mpqn: number}>,
-     *   measureMap: Array<{tick: number, absBeat: number, measure: number, num: number, denom: number, ticksPerBeat: number}>,
+     *   measureMap: Array<{
+     *     tick: number,
+     *     absBeat: number,
+     *     measure: number,
+     *     num: number,
+     *     denom: number,
+     *     ticksPerBeat: number
+     *   }>,
      *   tracksCount: number,
      *   trackNames: string[],
      *   trackHasNotes: boolean[],
      *   maxTick: number,
-     *   totalSeconds: number
-     * }} Tempo, time-signature, track, and duration metadata.
+     *   totalSeconds: number,
+     *   programMap: Array<Array<{tick: number, channel: number, program: number}>>,
+     *   bankMsbMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   bankLsbMap: Array<Array<{tick: number, channel: number, value: number}>>
+     * }} Parsed timing, meter, track, and instrumentation metadata for the song.
+     *   - `division` — SMF timing division (ticks per quarter note).
+     *   - `timeMap` — sorted tempo-change timeline (`mpqn` = microseconds per quarter note).
+     *   - `measureMap` — sorted time-signature timeline with precomputed beat/measure offsets.
+     *   - `tracksCount` — number of MTrk chunks found in the file.
+     *   - `trackNames` — best-effort track names (falls back to `Track N`).
+     *   - `trackHasNotes` — whether each track contains any channel (0x8–0xE) events.
+     *   - `maxTick` — highest absolute tick encountered across all tracks.
+     *   - `totalSeconds` — computed song duration in seconds from tempo map + `maxTick`.
+     *   - `programMap[ch]` — Program Change events for channel `ch`, sorted by tick.
+     *   - `bankMsbMap[ch]` — Bank Select MSB (CC 0) events for channel `ch`, sorted by tick.
+     *   - `bankLsbMap[ch]` — Bank Select LSB (CC 32) events for channel `ch`, sorted by tick.
+     * @throws {Error} If the data does not begin with a valid `MThd` header chunk.
      * @private
      */
     _buildTempoMap(midiData) {
         let offset = 0;
 
-        const readString = (len) => {
-            let str = '';
-            for (let i = 0; i < len; i++) str += String.fromCharCode(midiData[offset++]);
-            return str;
-        };
+        const readString = (len) => { let str = ''; for (let i = 0; i < len; i++) str += String.fromCharCode(midiData[offset++]); return str; };
         const readUint16 = () => (midiData[offset++] << 8) | midiData[offset++];
         const readUint32 = () => (midiData[offset++] << 24) | (midiData[offset++] << 16) | (midiData[offset++] << 8) | midiData[offset++];
         const readVLQ = () => {
@@ -402,7 +436,7 @@ class TimidityPlayer {
         };
 
         if (readString(4) !== 'MThd') throw new Error("Not a valid MIDI file");
-        readUint32(); // length
+        readUint32();
         const format = readUint16();
         const tracksCount = readUint16();
         const division = readUint16();
@@ -411,6 +445,9 @@ class TimidityPlayer {
         const timeSigEvents = [];
         const trackNames = [];
         const trackHasNotes = [];
+        const programEvents = [];
+        const bankMsbEvents = [];
+        const bankLsbEvents = [];
         let maxTick = 0;
 
         for (let t = 0; t < tracksCount; t++) {
@@ -428,39 +465,52 @@ class TimidityPlayer {
                 let status = midiData[offset];
                 if (status >= 0x80) { runningStatus = status; offset++; } else { status = runningStatus; }
 
-                if (status === 0xFF) { // Meta
+                if (status === 0xFF) {
                     const type = midiData[offset++];
                     const len = readVLQ();
-                    if (type === 0x51 && len === 3) { // Set Tempo
+                    if (type === 0x51 && len === 3) {
                         const mpqn = (midiData[offset] << 16) | (midiData[offset + 1] << 8) | midiData[offset + 2];
-                        tempoEvents.push({ tick: absTick, mpqn: mpqn });
-                    } else if (type === 0x58 && len === 4) { // Time Signature
+                        tempoEvents.push({ tick: absTick, mpqn });
+                    } else if (type === 0x58 && len === 4) {
                         const num = midiData[offset];
                         const denom = Math.pow(2, midiData[offset + 1]);
-                        timeSigEvents.push({ tick: absTick, num: num, denom: denom });
-                    } else if (type === 0x03) { // Track Name
+                        timeSigEvents.push({ tick: absTick, num, denom });
+                    } else if (type === 0x03) {
                         const nameBytes = midiData.slice(offset, offset + len);
                         try {
                             const nameStr = new TextDecoder().decode(nameBytes);
-                            // Only set it if it's the first track name found in the track
                             if (!currentTrackName) currentTrackName = nameStr;
                         } catch (e) { }
                     }
                     offset += len;
-                } else if (status === 0xF0 || status === 0xF7) { // SysEx
+                } else if (status === 0xF0 || status === 0xF7) {
                     const len = readVLQ();
                     offset += len;
-                } else { // Channel event
+                } else {
+                    // Channel event — perlu membaca data bytes untuk program/bank
                     const cmd = status >> 4;
-                    if (cmd >= 0x8 && cmd <= 0xE) {
-                        hasChannelEvents = true;
-                    }
+                    const ch = status & 0xF;
+                    if (cmd >= 0x8 && cmd <= 0xE) hasChannelEvents = true;
+
                     if (status >= 0xF8) {
                         // System Realtime (no data bytes)
                     } else if (status === 0xF1 || status === 0xF3 || cmd === 0xC || cmd === 0xD) {
+                        const d1 = midiData[offset];
                         offset += 1;
+                        if (cmd === 0xC) { // Program Change
+                            programEvents.push({ tick: absTick, channel: ch, program: d1 });
+                        }
                     } else {
+                        const d1 = midiData[offset];
+                        const d2 = midiData[offset + 1];
                         offset += 2;
+                        if (cmd === 0xB) { // Control Change
+                            if (d1 === 0) {
+                                bankMsbEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 32) {
+                                bankLsbEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            }
+                        }
                     }
                 }
             }
@@ -471,8 +521,19 @@ class TimidityPlayer {
 
         tempoEvents.sort((a, b) => a.tick - b.tick);
         if (tempoEvents.length === 0 || tempoEvents[0].tick !== 0) {
-            tempoEvents.unshift({ tick: 0, mpqn: 500000 }); // Default 120 BPM
+            tempoEvents.unshift({ tick: 0, mpqn: 500000 });
         }
+
+        const buildChannelMap = (events) => {
+            const byChannel = Array.from({ length: 16 }, () => []);
+            for (const ev of events) byChannel[ev.channel].push(ev);
+            for (const arr of byChannel) arr.sort((a, b) => a.tick - b.tick);
+            return byChannel;
+        };
+
+        const programMap = buildChannelMap(programEvents);
+        const bankMsbMap = buildChannelMap(bankMsbEvents);
+        const bankLsbMap = buildChannelMap(bankLsbEvents);
 
         const timeMap = [];
         let currentTime = 0;
@@ -532,7 +593,9 @@ class TimidityPlayer {
             totalSeconds = lastMap.timeSec + deltaSec;
         }
 
-        return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, maxTick, totalSeconds };
+        return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, maxTick, totalSeconds,
+            programMap, bankMsbMap, bankLsbMap
+        };
     }
 
     /**
@@ -1909,8 +1972,23 @@ class TimidityPlayer {
     }
 
     /**
-     * Gets the parsed tempo map of the currently loaded MIDI song.
-     * @returns {Object|null} The tempo map object containing { division, timeMap }, or null if no song is loaded.
+     * Returns the tempo map generated from the currently loaded song.
+     *
+     * @returns {Object|null} An object containing:
+     *                        {
+     *                          division,
+     *                          timeMap,
+     *                          measureMap,
+     *                          tracksCount,
+     *                          trackNames,
+     *                          trackHasNotes,
+     *                          maxTick,
+     *                          totalSeconds,
+     *                          programMap,
+     *                          bankMsbMap,
+     *                          bankLsbMap
+     *                        },
+     *                        or null if no tempo map is available.
      */
     getTempoMap() {
         return this.tempoMap || null;
@@ -2170,6 +2248,53 @@ class TimidityPlayer {
             const list = data.drums.get(bank) || [];
             return list.sort((a, b) => a.id - b.id);
         });
+    }
+
+    /**
+     * Returns the active MIDI program (instrument) number for the specified channel
+     * at the given tick position.
+     * Only events that have already occurred (tick <= specified tick) are taken into account.
+     *
+     * @param {number} channel - MIDI channel (0-15).
+     * @param {number} tick    - Absolute tick position.
+     * @returns {number} Program number (0-127), or -1 if the tempo/program map is not available.
+     */
+    getProgram(channel, tick) {
+        if (!this.tempoMap || !this.tempoMap.programMap) return -1;
+        const arr = this.tempoMap.programMap[channel];
+        let result = 0; // default GM program
+        if (arr) {
+            for (const ev of arr) {
+                if (ev.tick > tick) break;
+                result = ev.program;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns the active bank number (Bank Select MSB / CC 0) for the specified channel
+     * at the given tick position.
+     * Only events that have already occurred (tick <= specified tick) are taken into account.
+     *
+     * This value is consistent with the `bank` parameter used by
+     * `setRealtimeInstrument()` and `loadInstrumentForSong()`.
+     *
+     * @param {number} channel - MIDI channel (0-15).
+     * @param {number} tick    - Absolute tick position.
+     * @returns {number} Bank MSB (0-127), or -1 if the tempo/bank map is not available.
+     */
+    getBank(channel, tick) {
+        if (!this.tempoMap || !this.tempoMap.bankMsbMap) return -1;
+        const arr = this.tempoMap.bankMsbMap[channel];
+        let result = 0; // default GM bank MSB
+        if (arr) {
+            for (const ev of arr) {
+                if (ev.tick > tick) break;
+                result = ev.value;
+            }
+        }
+        return result;
     }
 
     /**

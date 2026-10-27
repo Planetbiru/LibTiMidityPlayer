@@ -342,8 +342,29 @@ Gets metadata and information about the currently loaded song.
 - **Returns:** `Object | null` - Parsed JSON object containing song info (title, copyright, text events, etc.).
 
 ### `getTempoMap()`
-Gets the parsed tempo map of the currently loaded MIDI song.
-- **Returns:** `Object | null` - An object containing the MIDI `division` (ticks per beat) and a `timeMap` array (`[{tick, timeSec, mpqn}]`), or `null` if no song is loaded.
+Gets the parsed tempo map of the currently loaded MIDI song. In addition to the tempo/meter maps, this object now also contains per-channel maps for program and bank changes that were collected during MIDI parsing (see `getProgram()` and `getBank()`).
+
+- **Returns:** `Object | null` - An object with the following shape, or `null` if no song is loaded:
+  ```js
+  {
+      division: number,            // ticks per quarter note
+      timeMap: Array<{ tick, timeSec, mpqn }>,
+      measureMap: Array<{ tick, absBeat, measure, num, denom, ticksPerBeat }>,
+      tracksCount: number,
+      trackNames: string[],
+      trackHasNotes: boolean[],
+      maxTick: number,
+      totalSeconds: number,
+
+      // NEW: per-channel event lists, sorted by ascending tick
+      programMap: Array<Array<{ tick, channel, program }>>,  // index = channel 0..15
+      bankMsbMap: Array<Array<{ tick, channel, value }>>,    // CC 0  (Bank Select MSB)
+      bankLsbMap: Array<Array<{ tick, channel, value }>>     // CC 32 (Bank Select LSB)
+  }
+  ```
+- **Notes:**
+  - `programMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending. They are consumed internally by `getProgram()` and `getBank()`.
+  - If the MIDI file does not contain any program/bank events on a channel, the corresponding inner array is empty.
 
 ### `tickToBeat(tick)`
 Converts a MIDI tick into an absolute beat number (useful for syncing metronomes).
@@ -374,6 +395,65 @@ Checks if a specific MIDI tick aligns exactly with a metronome click.
 
 ### `getControllerValueAtTick(channel, cc, tick)`
 - **Returns:** `number` - The controller value (0-127) at the exact tick position.
+
+### `getProgram(channel, tick)`
+Returns the MIDI program (instrument) number that is **active on the given channel at the given tick**, taking into account only events that have already occurred (`event.tick <= tick`). This is derived from the parsed MIDI event stream (all `Program Change` / `0xCn` messages), so it always reflects the correct program for any point in the timeline, regardless of whether playback has reached that tick yet.
+
+- **Parameters:**
+  - `channel` *(number)*: MIDI channel (0-15).
+  - `tick` *(number)*: The absolute tick position.
+- **Returns:** `number` - The program number (0-127), or `-1` if the tempo/program map is not available (i.e., no MIDI has been loaded or parsing failed).
+- **Notes:**
+  - If no `Program Change` event has occurred on that channel at or before `tick`, the GM default program `0` (Acoustic Grand Piano) is returned.
+  - Requires `load()` to have been called successfully so that the internal tempo map has been built.
+- **Example:**
+  ```js
+  const prog = player.getProgram(0, player.tickToTime(0) && 480);
+  console.log('Channel 0 program at tick 480:', prog);
+  ```
+
+### `getBank(channel, tick)`
+Returns the MIDI **Bank Select MSB** value (CC 0) that is active on the given channel at the given tick, considering only events with `tick <= tick`.
+
+- **Parameters:**
+  - `channel` *(number)*: MIDI channel (0-15).
+  - `tick` *(number)*: The absolute tick position.
+- **Returns:** `number` - The Bank MSB value (0-127), or `-1` if the tempo/bank map is not available.
+- **Notes:**
+  - This value is compatible with the `bank` parameter used by `setRealtimeInstrument()` and `loadInstrumentForSong()`, so the typical pattern for "reload the current instrument at the playhead" is:
+    ```js
+    const prog = player.getProgram(ch, tick);
+    const bank = player.getBank(ch, tick);
+    await player.setRealtimeInstrument(ch, prog, bank);
+    ```
+  - If no `Bank Select` event has occurred on that channel at or before `tick`, the GM default bank `0` is returned.
+  - The Bank **LSB** (CC 32) is also parsed and available via `getTempoMap().bankLsbMap` if you need XG/GS extensions.
+- **Example:**
+  ```js
+  player.onMidiEvent(({ tick, channel, eventType }) => {
+      if (eventType === player.ME_PROGRAM) {
+          console.log(`ch${channel} -> prog ${player.getProgram(channel, tick)}, bank ${player.getBank(channel, tick)}`);
+      }
+  });
+  ```
+
+#### Syncing instruments with the playhead
+
+A common pattern is to keep the UI in sync with the program/bank that is currently active on each channel while the song plays:
+
+```js
+player.onPlaying((tick) => {
+    for (let ch = 0; ch < 16; ch++) {
+        const program = player.getProgram(ch, tick);
+        const bank = player.getBank(ch, tick);
+        if (program !== -1) {
+            ui.setChannelInstrument(ch, { program, bank });
+        }
+    }
+});
+```
+
+Because `getProgram` / `getBank` read directly from the parsed event list (via `Program Change` and `Bank Select` CC events), the values they return are independent of playback state and are correct even when the user scrubs the playhead with `goTo(tick)` or `seek(seconds)`.
 
 ---
 
