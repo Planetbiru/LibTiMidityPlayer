@@ -390,6 +390,12 @@ Converts an absolute time in seconds into a MIDI tick value.
   - `time` *(number)*: The absolute time in seconds.
 - **Returns:** `number` - The corresponding MIDI tick value, calculated based on the tempo map and ticks-per-quarter-note (PPQN) division.
 
+### `getCurrentTick()`
+Returns the current playback position as an absolute MIDI tick.
+
+### `getTime()`
+Returns the current playback position as an absolute time value in seconds.
+
 ### `getMetronome(tick)`
 Checks if a specific MIDI tick aligns exactly with a metronome click.
 - **Parameters:**
