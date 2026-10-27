@@ -1926,6 +1926,24 @@ class TimidityPlayer {
     }
 
     /**
+     * Returns the current playback position as an absolute MIDI tick.
+     *
+     * @returns {number} The current playback position in ticks.
+     */
+    getCurrentTick() {
+        return this.c.getCurrentTick(this.songPtr);
+    }
+
+    /**
+     * Returns the current playback position as an absolute time value in seconds.
+     *
+     * @returns {number} The current playback time in seconds.
+     */
+    getTime() {
+        return this.c.getTime(this.songPtr);
+    }
+
+    /**
      * Checks if a specific MIDI tick aligns with a metronome click.
      * @param {number} tick - The absolute tick position.
      * @returns {Object|null} Metronome data { isClick, isDownbeat, beatNumber, measure } or null if invalid.
