@@ -751,6 +751,107 @@
             box-shadow: 0 0 14px rgba(85, 230, 193, 0.5);
         }
 
+        .drum-pad-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .drum-pad-header h3 {
+            margin: 0 0 4px;
+        }
+
+        .drum-pad-caption {
+            color: var(--muted-color);
+            font-size: 0.83rem;
+        }
+
+        .drum-channel-badge {
+            flex: 0 0 auto;
+            padding: 5px 9px;
+            border: 1px solid #2d655b;
+            border-radius: 999px;
+            background: rgba(32, 125, 105, 0.16);
+            color: #9debd9;
+            font-size: 0.75rem;
+            font-weight: 650;
+        }
+
+        .drum-pad-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+            gap: 9px;
+        }
+
+        .drum-pad {
+            display: flex;
+            min-height: 62px;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid #2b3c4d;
+            border-radius: 10px;
+            background: linear-gradient(145deg, #1a2836, #121c27);
+            text-align: left;
+            touch-action: manipulation;
+            user-select: none;
+        }
+
+        .drum-pad:not(:disabled):hover {
+            border-color: #467567;
+            background: linear-gradient(145deg, #203748, #16262e);
+        }
+
+        .drum-pad:active:not(:disabled),
+        .drum-pad.active {
+            border-color: var(--accent-color);
+            background: linear-gradient(145deg, #205d53, #183b3a);
+            box-shadow: inset 0 0 0 1px rgba(85, 230, 193, 0.18), 0 0 18px rgba(85, 230, 193, 0.12);
+        }
+
+        .drum-pad-icon {
+            display: grid;
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            place-items: center;
+            border: 1px solid #355064;
+            border-radius: 10px;
+            background: #101923;
+            color: var(--accent-color);
+        }
+
+        .drum-pad-icon svg {
+            display: block;
+            width: 23px;
+            height: 23px;
+        }
+
+        .drum-pad-copy {
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .drum-pad-name {
+            overflow: hidden;
+            color: #e6edf5;
+            font-size: 0.8rem;
+            font-weight: 650;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .drum-pad-note {
+            color: #8b9bad;
+            font-size: 0.67rem;
+            font-variant-numeric: tabular-nums;
+        }
+
         .mixer-container {
             gap: 10px;
             padding: 5px 2px 12px;
@@ -975,6 +1076,11 @@
                 min-width: 0;
                 flex: 1;
             }
+
+            .drum-pad-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 7px;
+            }
         }
 
         @media (max-width: 480px) {
@@ -1007,6 +1113,15 @@
             .piano-header {
                 align-items: flex-start;
                 flex-direction: column;
+            }
+
+            .drum-pad-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .drum-pad-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
             .modal-content {
@@ -1078,6 +1193,17 @@
             </label>
         </div>
         <div id="piano" class="piano-container"></div>
+    </div>
+
+    <div class="panel">
+        <div class="drum-pad-header">
+            <div>
+                <h3>Drum Pad</h3>
+                <div class="drum-pad-caption">Tap a pad to play a percussion sound.</div>
+            </div>
+            <span class="drum-channel-badge">MIDI Channel 10 · Index 9</span>
+        </div>
+        <div class="drum-pad-grid" id="drumPadGrid"></div>
     </div>
 
     <div class="panel">
@@ -1197,6 +1323,7 @@
         <div style="margin-top: 10px;" id="midiStatus">Waiting for connection...</div>
     </div>
 
+    <script src="midi-icons.js"></script>
     <script>
 
         let patchUrlBase = 'gus-patch';
@@ -1209,6 +1336,46 @@
         let channelVelocity = {};
 
         let player;
+        const drumPads = [
+            { name: 'Kick 1', pitch: 35, icon: DRUM_ICON_SET.kick },
+            { name: 'Kick 2', pitch: 36, icon: DRUM_ICON_SET.kick },
+            { name: 'Snare 1', pitch: 38, icon: DRUM_ICON_SET.snare },
+            { name: 'Snare 2', pitch: 40, icon: DRUM_ICON_SET.snare },
+            { name: 'Rim Shot', pitch: 37, icon: DRUM_ICON_SET.snare },
+            { name: 'Clap', pitch: 39, icon: DRUM_ICON_SET.hand },
+            { name: 'HH Closed', pitch: 42, icon: DRUM_ICON_SET.hihat },
+            { name: 'HH Pedal', pitch: 44, icon: DRUM_ICON_SET.hihat },
+            { name: 'HH Open', pitch: 46, icon: DRUM_ICON_SET.hihat },
+            { name: 'Tom Floor L', pitch: 41, icon: DRUM_ICON_SET.tom },
+            { name: 'Tom Floor H', pitch: 43, icon: DRUM_ICON_SET.tom },
+            { name: 'Tom Mid L', pitch: 45, icon: DRUM_ICON_SET.tom },
+            { name: 'Tom Mid H', pitch: 47, icon: DRUM_ICON_SET.tom },
+            { name: 'Tom High L', pitch: 48, icon: DRUM_ICON_SET.tom },
+            { name: 'Tom High H', pitch: 50, icon: DRUM_ICON_SET.tom },
+            { name: 'Crash 1', pitch: 49, icon: DRUM_ICON_SET.cymbal },
+            { name: 'Crash 2', pitch: 57, icon: DRUM_ICON_SET.cymbal },
+            { name: 'Splash', pitch: 55, icon: DRUM_ICON_SET.cymbal },
+            { name: 'China', pitch: 52, icon: DRUM_ICON_SET.cymbal },
+            { name: 'Ride 1', pitch: 51, icon: DRUM_ICON_SET.cymbal },
+            { name: 'Ride 2', pitch: 59, icon: DRUM_ICON_SET.cymbal },
+            { name: 'Ride Bell', pitch: 53, icon: DRUM_ICON_SET.cymbal },
+            { name: 'Tambourine', pitch: 54, icon: DRUM_ICON_SET.tambourine },
+            { name: 'Cowbell', pitch: 56, icon: DRUM_ICON_SET.cowbell },
+            { name: 'Vibraslap', pitch: 58, icon: DRUM_ICON_SET.vibraslap },
+            { name: 'Bongo High', pitch: 60, icon: DRUM_ICON_SET.conga },
+            { name: 'Bongo Low', pitch: 61, icon: DRUM_ICON_SET.conga },
+            { name: 'Conga Mute', pitch: 62, icon: DRUM_ICON_SET.conga },
+            { name: 'Conga Open', pitch: 63, icon: DRUM_ICON_SET.conga },
+            { name: 'Conga Low', pitch: 64, icon: DRUM_ICON_SET.conga },
+            { name: 'Maracas', pitch: 70, icon: DRUM_ICON_SET.maracas },
+            { name: 'Agogo Hi', pitch: 67, icon: DRUM_ICON_SET.agogo },
+            { name: 'Agogo Low', pitch: 68, icon: DRUM_ICON_SET.agogo },
+            { name: 'Woodblock H', pitch: 76, icon: DRUM_ICON_SET.woodblock },
+            { name: 'Woodblock L', pitch: 77, icon: DRUM_ICON_SET.woodblock },
+            { name: 'Triangle O', pitch: 81, icon: DRUM_ICON_SET.triangle },
+            { name: 'Triangle M', pitch: 80, icon: DRUM_ICON_SET.triangle },
+            { name: 'Shaker', pitch: 82, icon: DRUM_ICON_SET.maracas }
+        ];
 
         // --- Main Application Logic ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -1431,9 +1598,49 @@
             const connectMidiBtn = document.getElementById('connectMidi');
             const midiInDevicesSelect = document.getElementById('midiInDevices');
             const midiStatusEl = document.getElementById('midiStatus');
+            const drumPadGrid = document.getElementById('drumPadGrid');
+            drumPads.forEach(({ name, pitch, icon }) => {
+                const button = document.createElement('button');
+                button.className = 'drum-pad';
+                button.type = 'button';
+                button.dataset.note = pitch;
+                button.disabled = true;
+                button.setAttribute('aria-label', `Play ${name}, MIDI note ${pitch}`);
+                button.innerHTML = `
+                    <span class="drum-pad-icon" aria-hidden="true">${icon}</span>
+                    <span class="drum-pad-copy">
+                        <span class="drum-pad-name">${name}</span>
+                        <span class="drum-pad-note">MIDI ${pitch}</span>
+                    </span>
+                `;
+                drumPadGrid.appendChild(button);
+            });
+            const drumPadButtons = document.querySelectorAll('.drum-pad');
 
             player = new TimidityPlayer({ patchUrlBase: patchUrlBase });
+            player.on('onInit', () => {
+                drumPadButtons.forEach((button) => {
+                    button.disabled = false;
+                });
+            });
             player.init();
+            drumPadButtons.forEach((button) => {
+                button.addEventListener('click', async () => {
+                    const pitch = Number(button.dataset.note);
+                    button.classList.add('active');
+
+                    try {
+                        await player.noteOn(9, 0, pitch, 110, { bank: 0 });
+                        window.setTimeout(() => {
+                            player.noteOff(9, pitch);
+                            button.classList.remove('active');
+                        }, 140);
+                    } catch (error) {
+                        button.classList.remove('active');
+                        statusEl.textContent = `Drum pad error: ${error instanceof Error ? error.message : String(error)}`;
+                    }
+                });
+            });
 
             // Set initial sync state from the checkbox
             player.isSyncEnabled = mixerSyncToggle.checked;
@@ -1803,6 +2010,10 @@
             player.on('onNoteOn', (event) => {
                 // Channel velocity
                 channelVelocity[event.channel] = event.velocity;
+                if (event.channel === 9) {
+                    const drumPad = document.querySelector(`.drum-pad[data-note="${event.pitch}"]`);
+                    if (drumPad) drumPad.classList.add('active');
+                }
                 const selectedChannel = parseInt(pianoChannelSelect.value);
                 if (event.channel == selectedChannel) {
                     const key = keys[event.pitch];
@@ -1814,6 +2025,10 @@
 
             player.on('onNoteOff', (event) => {
                 channelVelocity[event.channel] = 0;
+                if (event.channel === 9) {
+                    const drumPad = document.querySelector(`.drum-pad[data-note="${event.pitch}"]`);
+                    if (drumPad) drumPad.classList.remove('active');
+                }
                 const selectedChannel = parseInt(pianoChannelSelect.value);
                 if (event.channel == selectedChannel) {
                     const key = keys[event.pitch];
