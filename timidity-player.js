@@ -56,6 +56,7 @@ class TimidityPlayer {
         this.isPaused = false;
         this.isSeeking = false; // Flag to prevent onPlaying updates while user is dragging the seeker
         this.channelMuteState = new Array(16).fill(false); // Cache for mute state
+        this.pendingDrumKitLoad = null;
         this.totalDuration = 0; // Total duration in seconds
         this.midiInfo = {};
         this.lastDebugMessage = '';
@@ -1611,6 +1612,12 @@ class TimidityPlayer {
     noteOn(channel, program, pitch, velocity = 100, { bank = 0, pan = 64, bend = 8192, modulation = 0, chorus = 0, sustain = 0 } = {}) {
         if (!this.realtimeSongPtr || !this.audioContext || this.audioContext.state === 'closed') return;
 
+        if (channel === 9 && this.pendingDrumKitLoad) {
+            return this.pendingDrumKitLoad.then(() => this.noteOn(channel, program, pitch, velocity, {
+                bank, pan, bend, modulation, chorus, sustain
+            }));
+        }
+
         // If realtime synth was freed (e.g. after a stop()), re-initialize it.
         let p = Promise.resolve();
         if (!this.realtimeSongPtr) {
@@ -1735,6 +1742,48 @@ class TimidityPlayer {
     }
 
     /**
+     * Loads every defined drum patch in a drumset into the active synth instances.
+     * If the requested drumset is not defined, drumset 0 is used instead.
+     * @param {number} bank - The drumset bank number.
+     * @returns {Promise<number>} The drumset bank that was loaded.
+     */
+    async loadDrumKitFromBank(bank) {
+        if (!Number.isInteger(bank) || bank < 0 || bank > 127) {
+            throw new RangeError('Drumset bank must be an integer between 0 and 127');
+        }
+
+        let drums = await this.getDrumList(bank);
+        let loadedBank = bank;
+        if (drums.length === 0 && bank !== 0) {
+            loadedBank = 0;
+            drums = await this.getDrumList(loadedBank);
+        }
+        if (drums.length === 0) {
+            throw new Error(`No drum instruments are configured for bank ${loadedBank}`);
+        }
+
+        await Promise.all(drums.map(drum => {
+            const file = drum.file.split(/\s+/)[0];
+            return this._loadRequiredPatches(file, {
+                bank: loadedBank,
+                isDrum: true,
+                program: drum.id
+            });
+        }));
+
+        for (const drum of drums) {
+            if (this.realtimeSongPtr && this.c.loadProgram(this.realtimeSongPtr, loadedBank, drum.id, true) !== 0) {
+                throw new Error(`Failed to load drum ${drum.id} from bank ${loadedBank} into the real-time synth`);
+            }
+            if (this.songPtr && this.c.loadProgram(this.songPtr, loadedBank, drum.id, true) !== 0) {
+                throw new Error(`Failed to load drum ${drum.id} from bank ${loadedBank} into the song synth`);
+            }
+        }
+
+        return loadedBank;
+    }
+
+    /**
      * Broadcasts a general MIDI event (like Pitch Bend, CC) to the active synthesizers.
      * @param {number} eventType - The Timidity event type constant.
      * @param {number} channel - The MIDI channel.
@@ -1745,6 +1794,31 @@ class TimidityPlayer {
         // Disabled during offline rendering to avoid corrupting the output.
         if (typeof OfflineAudioContext !== 'undefined' && this.audioContext instanceof OfflineAudioContext) {
             return;
+        }
+
+        if (eventType === this.ME_TONE_BANK && channel === 9) {
+            const previousLoad = this.pendingDrumKitLoad || Promise.resolve();
+            const loadAndSelectBank = async () => {
+                const bank = await this.loadDrumKitFromBank(a);
+                if (this.realtimeSongPtr !== 0) {
+                    this.c.sendEvent(this.realtimeSongPtr, eventType, channel, bank, b);
+                }
+                if (this.songPtr !== 0) {
+                    this.c.sendEvent(this.songPtr, eventType, channel, bank, b);
+                }
+                return bank;
+            };
+            const pendingLoad = previousLoad.then(loadAndSelectBank, loadAndSelectBank);
+            this.pendingDrumKitLoad = pendingLoad;
+            pendingLoad.then(
+                () => {
+                    if (this.pendingDrumKitLoad === pendingLoad) this.pendingDrumKitLoad = null;
+                },
+                () => {
+                    if (this.pendingDrumKitLoad === pendingLoad) this.pendingDrumKitLoad = null;
+                }
+            );
+            return pendingLoad;
         }
 
         // Send event to BOTH realtime and main song so it affects any active voices on that channel

@@ -1,0 +1,1667 @@
+[
+  {
+    "filename": "0/tone/000_Ac_Grand_Piano.pat",
+    "patchName": "Ac. Grand Piano",
+    "gmProgram": 0,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ac. Grand: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/001_Bright_Piano.pat",
+    "patchName": "Bright Piano",
+    "gmProgram": 1,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Bright Piano: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/002_Elec_Grand.pat",
+    "patchName": "Elec. Grand",
+    "gmProgram": 2,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Elec. Grand: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/003_Honky-tonk.pat",
+    "patchName": "Honky-tonk",
+    "gmProgram": 3,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Honky-tonk: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/004_E_Piano_1.pat",
+    "patchName": "E.Piano 1",
+    "gmProgram": 4,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "E.Piano 1: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/005_E_Piano_2.pat",
+    "patchName": "E.Piano 2",
+    "gmProgram": 5,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "E.Piano 2: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/006_Harpsichord.pat",
+    "patchName": "Harpsichord",
+    "gmProgram": 6,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Harpsichord: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/007_Clavinet.pat",
+    "patchName": "Clavinet",
+    "gmProgram": 7,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Clavinet: struck-key tone with a resonant decay."
+  },
+  {
+    "filename": "0/tone/008_Celesta.pat",
+    "patchName": "Celesta",
+    "gmProgram": 8,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Celesta: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/009_Glockenspiel.pat",
+    "patchName": "Glockenspiel",
+    "gmProgram": 9,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Glockenspiel: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/010_Music_Box.pat",
+    "patchName": "Music Box",
+    "gmProgram": 10,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Music Box: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/011_Vibraphone.pat",
+    "patchName": "Vibraphone",
+    "gmProgram": 11,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Vibraphone: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/012_Marimba.pat",
+    "patchName": "Marimba",
+    "gmProgram": 12,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Marimba: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/013_Xylophone.pat",
+    "patchName": "Xylophone",
+    "gmProgram": 13,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Xylophone: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/014_Tubular_Bells.pat",
+    "patchName": "Tubular Bells",
+    "gmProgram": 14,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Tubular Bells: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/015_Dulcimer.pat",
+    "patchName": "Dulcimer",
+    "gmProgram": 15,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Dulcimer: a bright strike with a clear ringing tone."
+  },
+  {
+    "filename": "0/tone/016_Drawbar_Organ.pat",
+    "patchName": "Drawbar Organ",
+    "gmProgram": 16,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Drawbar Organ: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/017_Percussive_Organ.pat",
+    "patchName": "Percussive Organ",
+    "gmProgram": 17,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Percussive Organ: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/018_Rock_Organ.pat",
+    "patchName": "Rock Organ",
+    "gmProgram": 18,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Rock Organ: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/019_Church_Organ.pat",
+    "patchName": "Church Organ",
+    "gmProgram": 19,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Church Organ: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/020_Reed_Organ.pat",
+    "patchName": "Reed Organ",
+    "gmProgram": 20,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Reed Organ: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/021_Accordion.pat",
+    "patchName": "Accordion",
+    "gmProgram": 21,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Accordion: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/022_Harmonica.pat",
+    "patchName": "Harmonica",
+    "gmProgram": 22,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Harmonica: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/023_Tango_Accordion.pat",
+    "patchName": "Tango Accordion",
+    "gmProgram": 23,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Tango Accordion: a steady tone with layered harmonics."
+  },
+  {
+    "filename": "0/tone/024_Nylon_Guitar.pat",
+    "patchName": "Nylon Guitar",
+    "gmProgram": 24,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Nylon Guitar: a plucked-string attack with natural decay."
+  },
+  {
+    "filename": "0/tone/025_Steel_Guitar.pat",
+    "patchName": "Steel Guitar",
+    "gmProgram": 25,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Steel Guitar: a plucked-string attack with natural decay."
+  },
+  {
+    "filename": "0/drum/025_Snare_Roll.pat",
+    "patchName": "Snare Roll",
+    "gmProgram": 25,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Snare Roll: rapid, evenly spaced snare-wire strokes."
+  },
+  {
+    "filename": "0/tone/026_Jazz_Guitar.pat",
+    "patchName": "Jazz Guitar",
+    "gmProgram": 26,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Jazz Guitar: a plucked-string attack with natural decay."
+  },
+  {
+    "filename": "0/drum/026_Snap.pat",
+    "patchName": "Snap",
+    "gmProgram": 26,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Snap: dry finger snap with a short broadband crack."
+  },
+  {
+    "filename": "0/tone/027_Clean_Guitar.pat",
+    "patchName": "Clean Guitar",
+    "gmProgram": 27,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Clean Guitar: a plucked-string attack with natural decay."
+  },
+  {
+    "filename": "0/drum/027_High_Q.pat",
+    "patchName": "High Q",
+    "gmProgram": 27,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "High Q: bright, articulate short percussion hit."
+  },
+  {
+    "filename": "0/tone/028_Muted_Guitar.pat",
+    "patchName": "Muted Guitar",
+    "gmProgram": 28,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Muted Guitar: a plucked-string attack with natural decay."
+  },
+  {
+    "filename": "0/tone/029_Overdriven_Gtr.pat",
+    "patchName": "Overdriven Gtr",
+    "gmProgram": 29,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Overdriven Gtr: a plucked-string attack with natural decay."
+  },
+  {
+    "filename": "0/tone/030_Distortion_Gtr.pat",
+    "patchName": "Distortion Gtr",
+    "gmProgram": 30,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Distortion Gtr: a plucked-string attack with natural decay."
+  },
+  {
+    "filename": "0/tone/031_Gtr_Harmonics.pat",
+    "patchName": "Gtr Harmonics",
+    "gmProgram": 31,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Gtr Harmonics: sustained guitar overtone with loop."
+  },
+  {
+    "filename": "0/drum/031_Sticks.pat",
+    "patchName": "Sticks",
+    "gmProgram": 31,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Sticks: dry crossed-stick click with a woody tone."
+  },
+  {
+    "filename": "0/tone/032_Ac_Bass.pat",
+    "patchName": "Ac. Bass",
+    "gmProgram": 32,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ac. Bass: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/032_Square_Click.pat",
+    "patchName": "Square Click",
+    "gmProgram": 32,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Square Click: short, electronic metronome-like pulse."
+  },
+  {
+    "filename": "0/tone/033_Finger_Bass.pat",
+    "patchName": "Finger Bass",
+    "gmProgram": 33,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Finger Bass: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/033_Metro_Click.pat",
+    "patchName": "Metro. Click",
+    "gmProgram": 33,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Metronome Click: clear pitched timing tick."
+  },
+  {
+    "filename": "0/tone/034_Pick_Bass.pat",
+    "patchName": "Pick Bass",
+    "gmProgram": 34,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pick Bass: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/034_Metro_Bell.pat",
+    "patchName": "Metro. Bell",
+    "gmProgram": 34,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Metronome Bell: bright single timing bell."
+  },
+  {
+    "filename": "0/tone/035_Fretless_Bass.pat",
+    "patchName": "Fretless Bass",
+    "gmProgram": 35,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Fretless Bass: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/035_Ac_Bass_Drum.pat",
+    "patchName": "Ac. Bass Drum",
+    "gmProgram": 35,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ac. Bass Drum: deep kick thump with a short beater click."
+  },
+  {
+    "filename": "0/tone/036_Slap_Bass_1.pat",
+    "patchName": "Slap Bass 1",
+    "gmProgram": 36,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Slap Bass 1: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/036_Bass_Drum_1.pat",
+    "patchName": "Bass Drum 1",
+    "gmProgram": 36,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Bass Drum 1: punchy kick with a focused low end."
+  },
+  {
+    "filename": "0/tone/037_Slap_Bass_2.pat",
+    "patchName": "Slap Bass 2",
+    "gmProgram": 37,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Slap Bass 2: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/037_Side_Stick.pat",
+    "patchName": "Side Stick",
+    "gmProgram": 37,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Side Stick: dry rim click with a woody snap."
+  },
+  {
+    "filename": "0/tone/038_Synth_Bass_1.pat",
+    "patchName": "Synth Bass 1",
+    "gmProgram": 38,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Synth Bass 1: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/038_Ac_Snare.pat",
+    "patchName": "Ac. Snare",
+    "gmProgram": 38,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ac. Snare: crisp snare crack with a broad noise burst."
+  },
+  {
+    "filename": "0/tone/039_Synth_Bass_2.pat",
+    "patchName": "Synth Bass 2",
+    "gmProgram": 39,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Synth Bass 2: a focused low end and firm fundamental."
+  },
+  {
+    "filename": "0/drum/039_Hand_Clap.pat",
+    "patchName": "Hand Clap",
+    "gmProgram": 39,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Hand Clap: layered clap with a sharp, brief transient."
+  },
+  {
+    "filename": "0/tone/040_Violin.pat",
+    "patchName": "Violin",
+    "gmProgram": 40,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Violin: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/040_Elec_Snare.pat",
+    "patchName": "Elec. Snare",
+    "gmProgram": 40,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Elec. Snare: bright snare snap with a tight noisy tail."
+  },
+  {
+    "filename": "0/tone/041_Viola.pat",
+    "patchName": "Viola",
+    "gmProgram": 41,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Viola: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/041_Low_Floor_Tom.pat",
+    "patchName": "Low Floor Tom",
+    "gmProgram": 41,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low Floor Tom: pitched tom strike with a rounded, resonant."
+  },
+  {
+    "filename": "0/tone/042_Cello.pat",
+    "patchName": "Cello",
+    "gmProgram": 42,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Cello: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/042_Closed_Hi-Hat.pat",
+    "patchName": "Closed Hi-Hat",
+    "gmProgram": 42,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Closed Hi-Hat: dry, short hiss with a crisp cymbal edge."
+  },
+  {
+    "filename": "0/tone/043_Contrabass.pat",
+    "patchName": "Contrabass",
+    "gmProgram": 43,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Contrabass: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/043_High_Floor_Tom.pat",
+    "patchName": "High Floor Tom",
+    "gmProgram": 43,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "High Floor Tom: pitched tom strike with a rounded, resonant."
+  },
+  {
+    "filename": "0/tone/044_Tremolo_Str.pat",
+    "patchName": "Tremolo Str",
+    "gmProgram": 44,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Tremolo Str: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/044_Pedal_Hi-Hat.pat",
+    "patchName": "Pedal Hi-Hat",
+    "gmProgram": 44,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pedal Hi-Hat: muted metal chick with a short, dry sizzle."
+  },
+  {
+    "filename": "0/tone/045_Pizzicato.pat",
+    "patchName": "Pizzicato",
+    "gmProgram": 45,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pizzicato: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/045_Low_Tom.pat",
+    "patchName": "Low Tom",
+    "gmProgram": 45,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low Tom: pitched tom strike with a rounded, resonant decay."
+  },
+  {
+    "filename": "0/tone/046_Harp.pat",
+    "patchName": "Harp",
+    "gmProgram": 46,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Harp: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/046_Open_Hi-Hat.pat",
+    "patchName": "Open Hi-Hat",
+    "gmProgram": 46,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Open Hi-Hat: open cymbal wash with a sustained metallic."
+  },
+  {
+    "filename": "0/tone/047_Timpani.pat",
+    "patchName": "Timpani",
+    "gmProgram": 47,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Timpani: a bowed or plucked tone with rich harmonics."
+  },
+  {
+    "filename": "0/drum/047_Low-Mid_Tom.pat",
+    "patchName": "Low-Mid Tom",
+    "gmProgram": 47,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low-Mid Tom: pitched tom strike with a rounded, resonant."
+  },
+  {
+    "filename": "0/tone/048_Strings_1.pat",
+    "patchName": "Strings 1",
+    "gmProgram": 48,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Strings 1: a layered orchestral blend with smooth sustain."
+  },
+  {
+    "filename": "0/drum/048_Hi-Mid_Tom.pat",
+    "patchName": "Hi-Mid Tom",
+    "gmProgram": 48,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Hi-Mid Tom: pitched tom strike with a rounded, resonant."
+  },
+  {
+    "filename": "0/tone/049_Strings_2.pat",
+    "patchName": "Strings 2",
+    "gmProgram": 49,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Strings 2: a layered orchestral blend with smooth sustain."
+  },
+  {
+    "filename": "0/drum/049_Crash_Cymbal_1.pat",
+    "patchName": "Crash Cymbal 1",
+    "gmProgram": 49,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Crash Cymbal 1: bright cymbal crash with a broad metallic."
+  },
+  {
+    "filename": "0/tone/050_SynthStrings_1.pat",
+    "patchName": "SynthStrings 1",
+    "gmProgram": 50,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "SynthStrings 1: a layered orchestral blend with smooth."
+  },
+  {
+    "filename": "0/drum/050_High_Tom.pat",
+    "patchName": "High Tom",
+    "gmProgram": 50,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "High Tom: pitched tom strike with a rounded, resonant decay."
+  },
+  {
+    "filename": "0/tone/051_SynthStrings_2.pat",
+    "patchName": "SynthStrings 2",
+    "gmProgram": 51,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "SynthStrings 2: a layered orchestral blend with smooth."
+  },
+  {
+    "filename": "0/drum/051_Ride_Cymbal_1.pat",
+    "patchName": "Ride Cymbal 1",
+    "gmProgram": 51,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ride Cymbal 1: bright ride strike with a clear, ringing."
+  },
+  {
+    "filename": "0/tone/052_Choir_Aahs.pat",
+    "patchName": "Choir Aahs",
+    "gmProgram": 52,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Choir Aahs: a layered orchestral blend with smooth sustain."
+  },
+  {
+    "filename": "0/drum/052_Chinese_Cymbal.pat",
+    "patchName": "Chinese Cymbal",
+    "gmProgram": 52,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Chinese Cymbal: bright cymbal crash with a broad metallic."
+  },
+  {
+    "filename": "0/tone/053_Voice_Oohs.pat",
+    "patchName": "Voice Oohs",
+    "gmProgram": 53,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Voice Oohs: a layered orchestral blend with smooth sustain."
+  },
+  {
+    "filename": "0/drum/053_Ride_Bell.pat",
+    "patchName": "Ride Bell",
+    "gmProgram": 53,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ride Bell: bright ride strike with a clear, ringing sustain."
+  },
+  {
+    "filename": "0/tone/054_Synth_Voice.pat",
+    "patchName": "Synth Voice",
+    "gmProgram": 54,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Synth Voice: a layered orchestral blend with smooth sustain."
+  },
+  {
+    "filename": "0/drum/054_Tambourine.pat",
+    "patchName": "Tambourine",
+    "gmProgram": 54,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Tambourine: bright tambourine jingle with a rattling tail."
+  },
+  {
+    "filename": "0/tone/055_Orchestra_Hit.pat",
+    "patchName": "Orchestra Hit",
+    "gmProgram": 55,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Orchestra Hit: a layered orchestral blend with smooth."
+  },
+  {
+    "filename": "0/drum/055_Splash_Cymbal.pat",
+    "patchName": "Splash Cymbal",
+    "gmProgram": 55,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Splash Cymbal: bright cymbal crash with a broad metallic."
+  },
+  {
+    "filename": "0/tone/056_Trumpet.pat",
+    "patchName": "Trumpet",
+    "gmProgram": 56,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Trumpet: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/056_Cowbell.pat",
+    "patchName": "Cowbell",
+    "gmProgram": 56,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Cowbell: pitched metal strike with a hollow bell-like ring."
+  },
+  {
+    "filename": "0/tone/057_Trombone.pat",
+    "patchName": "Trombone",
+    "gmProgram": 57,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Trombone: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/057_Crash_Cymbal_2.pat",
+    "patchName": "Crash Cymbal 2",
+    "gmProgram": 57,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Crash Cymbal 2: bright cymbal crash with a broad metallic."
+  },
+  {
+    "filename": "0/tone/058_Tuba.pat",
+    "patchName": "Tuba",
+    "gmProgram": 58,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Tuba: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/058_Vibraslap.pat",
+    "patchName": "Vibraslap",
+    "gmProgram": 58,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Vibraslap: springy slap with a rattling, noisy decay."
+  },
+  {
+    "filename": "0/tone/059_Muted_Trpt.pat",
+    "patchName": "Muted Trpt",
+    "gmProgram": 59,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Muted Trpt: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/059_Ride_Cymbal_2.pat",
+    "patchName": "Ride Cymbal 2",
+    "gmProgram": 59,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ride Cymbal 2: bright ride strike with a clear, ringing."
+  },
+  {
+    "filename": "0/tone/060_French_Horn.pat",
+    "patchName": "French Horn",
+    "gmProgram": 60,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "French Horn: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/060_Hi_Bongo.pat",
+    "patchName": "Hi Bongo",
+    "gmProgram": 60,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Hi Bongo: skin-drum strike with a crisp, woody tone."
+  },
+  {
+    "filename": "0/tone/061_Brass_Section.pat",
+    "patchName": "Brass Section",
+    "gmProgram": 61,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Brass Section: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/061_Low_Bongo.pat",
+    "patchName": "Low Bongo",
+    "gmProgram": 61,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low Bongo: skin-drum strike with a crisp, woody tone."
+  },
+  {
+    "filename": "0/tone/062_SynthBrass_1.pat",
+    "patchName": "SynthBrass 1",
+    "gmProgram": 62,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "SynthBrass 1: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/062_Mute_Hi_Conga.pat",
+    "patchName": "Mute Hi Conga",
+    "gmProgram": 62,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Mute Hi Conga: conga strike with a rounded, resonant skin."
+  },
+  {
+    "filename": "0/tone/063_SynthBrass_2.pat",
+    "patchName": "SynthBrass 2",
+    "gmProgram": 63,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "SynthBrass 2: a bold attack and bright, focused tone."
+  },
+  {
+    "filename": "0/drum/063_Open_Hi_Conga.pat",
+    "patchName": "Open Hi Conga",
+    "gmProgram": 63,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Open Hi Conga: conga strike with a rounded, resonant skin."
+  },
+  {
+    "filename": "0/tone/064_Soprano_Sax.pat",
+    "patchName": "Soprano Sax",
+    "gmProgram": 64,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Soprano Sax: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/064_Low_Conga.pat",
+    "patchName": "Low Conga",
+    "gmProgram": 64,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low Conga: conga strike with a rounded, resonant skin tone."
+  },
+  {
+    "filename": "0/tone/065_Alto_Sax.pat",
+    "patchName": "Alto Sax",
+    "gmProgram": 65,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Alto Sax: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/065_High_Timbale.pat",
+    "patchName": "High Timbale",
+    "gmProgram": 65,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "High Timbale: pitched timbale strike with a bright, firm."
+  },
+  {
+    "filename": "0/tone/066_Tenor_Sax.pat",
+    "patchName": "Tenor Sax",
+    "gmProgram": 66,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Tenor Sax: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/066_Low_Timbale.pat",
+    "patchName": "Low Timbale",
+    "gmProgram": 66,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low Timbale: pitched timbale strike with a bright, firm."
+  },
+  {
+    "filename": "0/tone/067_Bari_Sax.pat",
+    "patchName": "Bari Sax",
+    "gmProgram": 67,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Bari Sax: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/067_High_Agogo.pat",
+    "patchName": "High Agogo",
+    "gmProgram": 67,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "High Agogo: pitched bell strike with a clear metallic ring."
+  },
+  {
+    "filename": "0/tone/068_Oboe.pat",
+    "patchName": "Oboe",
+    "gmProgram": 68,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Oboe: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/068_Low_Agogo.pat",
+    "patchName": "Low Agogo",
+    "gmProgram": 68,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low Agogo: pitched bell strike with a clear metallic ring."
+  },
+  {
+    "filename": "0/tone/069_English_Horn.pat",
+    "patchName": "English Horn",
+    "gmProgram": 69,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "English Horn: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/069_Cabasa.pat",
+    "patchName": "Cabasa",
+    "gmProgram": 69,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Cabasa: dry shaker rattle with a fine, gritty texture."
+  },
+  {
+    "filename": "0/tone/070_Bassoon.pat",
+    "patchName": "Bassoon",
+    "gmProgram": 70,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Bassoon: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/070_Maracas.pat",
+    "patchName": "Maracas",
+    "gmProgram": 70,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Maracas: crisp shaker rattle with a short, bright tail."
+  },
+  {
+    "filename": "0/tone/071_Clarinet.pat",
+    "patchName": "Clarinet",
+    "gmProgram": 71,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Clarinet: a reedy wind tone with expressive harmonics."
+  },
+  {
+    "filename": "0/drum/071_Short_Whistle.pat",
+    "patchName": "Short Whistle",
+    "gmProgram": 71,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Short Whistle: breathy whistle tone with a clear sustained."
+  },
+  {
+    "filename": "0/tone/072_Piccolo.pat",
+    "patchName": "Piccolo",
+    "gmProgram": 72,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Piccolo: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/072_Long_Whistle.pat",
+    "patchName": "Long Whistle",
+    "gmProgram": 72,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Long Whistle: breathy whistle tone with a clear sustained."
+  },
+  {
+    "filename": "0/tone/073_Flute.pat",
+    "patchName": "Flute",
+    "gmProgram": 73,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Flute: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/073_Short_Guiro.pat",
+    "patchName": "Short Guiro",
+    "gmProgram": 73,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Short Guiro: raspy guiro scrape with a textured, rattling."
+  },
+  {
+    "filename": "0/tone/074_Recorder.pat",
+    "patchName": "Recorder",
+    "gmProgram": 74,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Recorder: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/074_Long_Guiro.pat",
+    "patchName": "Long Guiro",
+    "gmProgram": 74,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Long Guiro: raspy guiro scrape with a textured, rattling."
+  },
+  {
+    "filename": "0/tone/075_Pan_Flute.pat",
+    "patchName": "Pan Flute",
+    "gmProgram": 75,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pan Flute: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/075_Claves.pat",
+    "patchName": "Claves",
+    "gmProgram": 75,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Claves: sharp clave click with a dry, woody attack."
+  },
+  {
+    "filename": "0/tone/076_Blown_Bottle.pat",
+    "patchName": "Blown Bottle",
+    "gmProgram": 76,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Blown Bottle: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/076_Hi_Wood_Block.pat",
+    "patchName": "Hi Wood Block",
+    "gmProgram": 76,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Hi Wood Block: woodblock knock with a firm, hollow."
+  },
+  {
+    "filename": "0/tone/077_Shakuhachi.pat",
+    "patchName": "Shakuhachi",
+    "gmProgram": 77,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Shakuhachi: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/077_Low_Wood_Block.pat",
+    "patchName": "Low Wood Block",
+    "gmProgram": 77,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Low Wood Block: woodblock knock with a firm, hollow."
+  },
+  {
+    "filename": "0/tone/078_Whistle.pat",
+    "patchName": "Whistle",
+    "gmProgram": 78,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Whistle: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/078_Mute_Cuica.pat",
+    "patchName": "Mute Cuica",
+    "gmProgram": 78,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Mute Cuica: nasal cuica squeak with a sliding pitched."
+  },
+  {
+    "filename": "0/tone/079_Ocarina.pat",
+    "patchName": "Ocarina",
+    "gmProgram": 79,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Ocarina: a breath-driven tone with a rounded body."
+  },
+  {
+    "filename": "0/drum/079_Open_Cuica.pat",
+    "patchName": "Open Cuica",
+    "gmProgram": 79,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Open Cuica: nasal cuica squeak with a sliding pitched."
+  },
+  {
+    "filename": "0/tone/080_Lead_square_.pat",
+    "patchName": "Lead (square)",
+    "gmProgram": 80,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (square): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/drum/080_Mute_Triangle.pat",
+    "patchName": "Mute Triangle",
+    "gmProgram": 80,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Mute Triangle: short, subdued metallic tick."
+  },
+  {
+    "filename": "0/tone/081_Lead_saw_.pat",
+    "patchName": "Lead (saw)",
+    "gmProgram": 81,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (saw): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/drum/081_Open_Triangle.pat",
+    "patchName": "Open Triangle",
+    "gmProgram": 81,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Open Triangle: metal triangle strike with a bright ringing."
+  },
+  {
+    "filename": "0/tone/082_Lead_calliope_.pat",
+    "patchName": "Lead (calliope)",
+    "gmProgram": 82,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (calliope): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/drum/082_Hat.pat",
+    "patchName": "Hat",
+    "gmProgram": 82,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Hat: soft maracas-like shaker with a gentle, airy attack."
+  },
+  {
+    "filename": "0/tone/083_Lead_chiff_.pat",
+    "patchName": "Lead (chiff)",
+    "gmProgram": 83,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (chiff): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/drum/083_Open_Cuica_2.pat",
+    "patchName": "Open Cuica 2",
+    "gmProgram": 83,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Open Cuica: upward squeak with a breathy edge."
+  },
+  {
+    "filename": "0/tone/084_Lead_charang_.pat",
+    "patchName": "Lead (charang)",
+    "gmProgram": 84,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (charang): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/drum/084_Bell_Tree.pat",
+    "patchName": "Bell Tree",
+    "gmProgram": 84,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Bell Tree: cascading metallic chime with a long shimmer."
+  },
+  {
+    "filename": "0/tone/085_Lead_voice_.pat",
+    "patchName": "Lead (voice)",
+    "gmProgram": 85,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (voice): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/tone/086_Lead_fifths_.pat",
+    "patchName": "Lead (fifths)",
+    "gmProgram": 86,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (fifths): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/tone/087_Lead_bass_ld_.pat",
+    "patchName": "Lead (bass+ld)",
+    "gmProgram": 87,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Lead (bass+ld): a focused synth tone with strong harmonics."
+  },
+  {
+    "filename": "0/tone/088_Pad_new_age_.pat",
+    "patchName": "Pad (new age)",
+    "gmProgram": 88,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (new age): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/089_Pad_warm_.pat",
+    "patchName": "Pad (warm)",
+    "gmProgram": 89,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (warm): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/090_Pad_polysynth_.pat",
+    "patchName": "Pad (polysynth)",
+    "gmProgram": 90,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (polysynth): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/091_Pad_choir_.pat",
+    "patchName": "Pad (choir)",
+    "gmProgram": 91,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (choir): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/092_Pad_bowed_.pat",
+    "patchName": "Pad (bowed)",
+    "gmProgram": 92,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (bowed): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/093_Pad_metallic_.pat",
+    "patchName": "Pad (metallic)",
+    "gmProgram": 93,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (metallic): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/094_Pad_halo_.pat",
+    "patchName": "Pad (halo)",
+    "gmProgram": 94,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (halo): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/095_Pad_sweep_.pat",
+    "patchName": "Pad (sweep)",
+    "gmProgram": 95,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Pad (sweep): a soft sustained synth texture."
+  },
+  {
+    "filename": "0/tone/096_FX_rain_.pat",
+    "patchName": "FX (rain)",
+    "gmProgram": 96,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (rain): an evolving synthetic texture with distinct."
+  },
+  {
+    "filename": "0/tone/097_FX_soundtrack_.pat",
+    "patchName": "FX (soundtrack)",
+    "gmProgram": 97,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (soundtrack): an evolving synthetic texture with."
+  },
+  {
+    "filename": "0/tone/098_FX_crystal_.pat",
+    "patchName": "FX (crystal)",
+    "gmProgram": 98,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (crystal): an evolving synthetic texture with distinct."
+  },
+  {
+    "filename": "0/tone/099_FX_atmosphere_.pat",
+    "patchName": "FX (atmosphere)",
+    "gmProgram": 99,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (atmosphere): nylon pluck with a faint airy shimmer."
+  },
+  {
+    "filename": "0/tone/100_FX_brightness_.pat",
+    "patchName": "FX (brightness)",
+    "gmProgram": 100,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (brightness): an evolving synthetic texture with."
+  },
+  {
+    "filename": "0/tone/101_FX_goblins_.pat",
+    "patchName": "FX (goblins)",
+    "gmProgram": 101,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (goblins): an evolving synthetic texture with distinct."
+  },
+  {
+    "filename": "0/tone/102_FX_echoes_.pat",
+    "patchName": "FX (echoes)",
+    "gmProgram": 102,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (echoes): an evolving synthetic texture with distinct."
+  },
+  {
+    "filename": "0/tone/103_FX_sci-fi_.pat",
+    "patchName": "FX (sci-fi)",
+    "gmProgram": 103,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "FX (sci-fi): an evolving synthetic texture with distinct."
+  },
+  {
+    "filename": "0/tone/104_Sitar.pat",
+    "patchName": "Sitar",
+    "gmProgram": 104,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Sitar: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/105_Banjo.pat",
+    "patchName": "Banjo",
+    "gmProgram": 105,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Banjo: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/106_Shamisen.pat",
+    "patchName": "Shamisen",
+    "gmProgram": 106,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Shamisen: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/107_Koto.pat",
+    "patchName": "Koto",
+    "gmProgram": 107,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Koto: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/108_Kalimba.pat",
+    "patchName": "Kalimba",
+    "gmProgram": 108,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Kalimba: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/109_Bagpipe.pat",
+    "patchName": "Bagpipe",
+    "gmProgram": 109,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Bagpipe: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/110_Fiddle.pat",
+    "patchName": "Fiddle",
+    "gmProgram": 110,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Fiddle: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/111_Shanai.pat",
+    "patchName": "Shanai",
+    "gmProgram": 111,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Shanai: a distinctive folk tone with a bright attack."
+  },
+  {
+    "filename": "0/tone/112_Tinkle_Bell.pat",
+    "patchName": "Tinkle Bell",
+    "gmProgram": 112,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Tinkle Bell: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/113_Agogo.pat",
+    "patchName": "Agogo",
+    "gmProgram": 113,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Agogo: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/114_Steel_Drums.pat",
+    "patchName": "Steel Drums",
+    "gmProgram": 114,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Steel Drums: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/115_Woodblock.pat",
+    "patchName": "Woodblock",
+    "gmProgram": 115,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Woodblock: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/116_Taiko_Drum.pat",
+    "patchName": "Taiko Drum",
+    "gmProgram": 116,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Taiko Drum: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/117_Melodic_Tom.pat",
+    "patchName": "Melodic Tom",
+    "gmProgram": 117,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Melodic Tom: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/118_Synth_Drum.pat",
+    "patchName": "Synth Drum",
+    "gmProgram": 118,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Synth Drum: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/119_Reverse_Cymbal.pat",
+    "patchName": "Reverse Cymbal",
+    "gmProgram": 119,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Reverse Cymbal: a pitched strike with clear resonance."
+  },
+  {
+    "filename": "0/tone/120_Fret_Noise.pat",
+    "patchName": "Fret Noise",
+    "gmProgram": 120,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Fret Noise: a recognizable effect with a distinct texture."
+  },
+  {
+    "filename": "0/tone/121_Breath_Noise.pat",
+    "patchName": "Breath Noise",
+    "gmProgram": 121,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Breath Noise: a recognizable effect with a distinct texture."
+  },
+  {
+    "filename": "0/tone/122_Seashore.pat",
+    "patchName": "Seashore",
+    "gmProgram": 122,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Seashore: a recognizable effect with a distinct texture."
+  },
+  {
+    "filename": "0/tone/123_Bird_Tweet.pat",
+    "patchName": "Bird Tweet",
+    "gmProgram": 123,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Bird Tweet: a recognizable effect with a distinct texture."
+  },
+  {
+    "filename": "0/tone/124_Telephone.pat",
+    "patchName": "Telephone",
+    "gmProgram": 124,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Telephone: a recognizable effect with a distinct texture."
+  },
+  {
+    "filename": "0/tone/125_Helicopter.pat",
+    "patchName": "Helicopter",
+    "gmProgram": 125,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Helicopter: a recognizable effect with a distinct texture."
+  },
+  {
+    "filename": "0/tone/126_Applause.pat",
+    "patchName": "Applause",
+    "gmProgram": 126,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Applause: a recognizable effect with a distinct texture."
+  },
+  {
+    "filename": "0/tone/127_Gunshot.pat",
+    "patchName": "Gunshot",
+    "gmProgram": 127,
+    "originalOrder": 0,
+    "userOrder": 0,
+    "targetBank": 0,
+    "description": "Gunshot: a recognizable effect with a distinct texture."
+  }
+]
