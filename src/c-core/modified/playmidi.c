@@ -220,7 +220,8 @@ static void recompute_amp(MidSong *song, int v)
 
   if (!(song->encoding & PE_MONO))
     {
-      if (song->voice[v].panning > 60 && song->voice[v].panning < 68)
+      if (!song->voice[v].pan_ramp_remaining &&
+	  song->voice[v].panning > 60 && song->voice[v].panning < 68)
 	{
 	  song->voice[v].panned=PANNED_CENTER;
 
@@ -228,7 +229,8 @@ static void recompute_amp(MidSong *song, int v)
 	    TIM_FSCALENEG((double)(tempamp) * song->voice[v].sample->volume * song->master_volume,
 			  21);
 	}
-      else if (song->voice[v].panning<5)
+      else if (!song->voice[v].pan_ramp_remaining &&
+	       song->voice[v].panning<5)
 	{
 	  song->voice[v].panned = PANNED_LEFT;
 
@@ -236,7 +238,8 @@ static void recompute_amp(MidSong *song, int v)
 	    TIM_FSCALENEG((double)(tempamp) * song->voice[v].sample->volume * song->master_volume,
 			  20);
 	}
-      else if (song->voice[v].panning>123)
+      else if (!song->voice[v].pan_ramp_remaining &&
+	       song->voice[v].panning>123)
 	{
 	  song->voice[v].panned = PANNED_RIGHT;
 
@@ -321,6 +324,7 @@ static void start_note(MidSong *song, MidEvent *e, int i)
   song->voice[i].track = e->track;
   song->voice[i].note = e->a;
   song->voice[i].velocity = e->b;
+  song->voice[i].pan_ramp_remaining = 0;
   song->voice[i].sample_offset = 0;
   song->voice[i].sample_increment = 0; /* make sure it isn't negative */
 
@@ -547,6 +551,43 @@ static void adjust_volume(MidSong *song)
     if (song->voice[i].channel == c &&
 	(song->voice[i].status==VOICE_ON || song->voice[i].status==VOICE_SUSTAINED))
       {
+	recompute_amp(song, i);
+	apply_envelope_to_amp(song, i);
+      }
+}
+
+static void adjust_panning(MidSong *song)
+{
+  int c = song->current_event->channel;
+  int i = song->voices;
+
+  while (i--)
+    if (song->voice[i].channel == c &&
+	song->voice[i].status != VOICE_FREE &&
+	song->voice[i].status != VOICE_DIE)
+      {
+	switch (song->voice[i].panned)
+	  {
+	  case PANNED_CENTER:
+	    song->voice[i].right_mix = song->voice[i].left_mix;
+	    break;
+	  case PANNED_LEFT:
+	    song->voice[i].right_mix = 0;
+	    break;
+	  case PANNED_RIGHT:
+	    song->voice[i].right_mix = song->voice[i].left_mix;
+	    song->voice[i].left_mix = 0;
+	    break;
+	  }
+	song->voice[i].panned = PANNED_MYSTERY;
+	song->voice[i].panning = song->channel[c].panning;
+	song->voice[i].pan_ramp_remaining = song->rate * 3 / 20;
+	if (song->voice[i].pan_ramp_remaining < 1)
+	  song->voice[i].pan_ramp_remaining = 1;
+	song->voice[i].pan_ramp_duration =
+	  song->voice[i].pan_ramp_remaining;
+	song->voice[i].left_mix_start = song->voice[i].left_mix;
+	song->voice[i].right_mix_start = song->voice[i].right_mix;
 	recompute_amp(song, i);
 	apply_envelope_to_amp(song, i);
       }
@@ -822,6 +863,7 @@ size_t mid_song_read_wave(MidSong *song, sint8 *ptr, size_t size, int skip_callb
 	case ME_PAN:
 	  song->channel[song->current_event->channel].panning =
 	    song->current_event->a;
+	  adjust_panning(song);
 	  break;
 
 	case ME_EXPRESSION:
@@ -1118,6 +1160,7 @@ void mid_send_event(MidSong *song, int type, int channel, int a, int b)
 
     case ME_PAN:
       song->channel[channel].panning = a;
+      adjust_panning(song);
       break;
 
     case ME_EXPRESSION:

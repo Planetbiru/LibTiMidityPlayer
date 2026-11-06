@@ -342,7 +342,7 @@ Gets metadata and information about the currently loaded song.
 - **Returns:** `Object | null` - Parsed JSON object containing song info (title, copyright, text events, etc.).
 
 ### `getTempoMap()`
-Gets the parsed tempo map of the currently loaded MIDI song. In addition to the tempo/meter maps, this object now also contains per-channel maps for program and bank changes that were collected during MIDI parsing (see `getProgram()` and `getBank()`).
+Gets the parsed tempo map of the currently loaded MIDI song. In addition to the tempo/meter maps, this object contains the MIDI channels used by the song and per-channel maps for program and bank changes collected during MIDI parsing (see `getProgram()` and `getBank()`).
 
 - **Returns:** `Object | null` - An object with the following shape, or `null` if no song is loaded:
   ```js
@@ -353,6 +353,7 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
       tracksCount: number,
       trackNames: string[],
       trackHasNotes: boolean[],
+      channelsUsed: number[],      // MIDI channel numbers (0-15)
       maxTick: number,
       totalSeconds: number,
 
@@ -363,6 +364,8 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
   }
   ```
 - **Notes:**
+  - `channelsUsed` is a sorted, duplicate-free array of MIDI channel numbers (0–15). It includes a channel if the MIDI file contains any channel voice event (status 0x8–0xE) on that channel, not only note events. For example, `[0, 9]` means the file uses channels 1 and 10; MIDI channel 10 is index `9`.
+  - The map is available after MIDI parsing. For example, read `player.getTempoMap()?.channelsUsed` in an `onMidiLoaded` listener to determine which mixer strips correspond to channels present in the file.
   - `programMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending. They are consumed internally by `getProgram()` and `getBank()`.
   - If the MIDI file does not contain any program/bank events on a channel, the corresponding inner array is empty.
 

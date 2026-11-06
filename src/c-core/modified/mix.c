@@ -88,6 +88,7 @@ void apply_envelope_to_amp(MidSong *song, int v)
 {
   float lamp = song->voice[v].left_amp, ramp;
   sint32 la,ra;
+  final_volume_t left_target, right_target;
   if (song->voice[v].panned == PANNED_MYSTERY)
     {
       ramp = song->voice[v].right_amp;
@@ -111,8 +112,8 @@ void apply_envelope_to_amp(MidSong *song, int v)
       if (ra>MAX_AMP_VALUE)
 	ra=MAX_AMP_VALUE;
 
-      song->voice[v].left_mix = la;
-      song->voice[v].right_mix = ra;
+      left_target = la;
+      right_target = ra;
     }
   else
     {
@@ -126,8 +127,45 @@ void apply_envelope_to_amp(MidSong *song, int v)
       if (la>MAX_AMP_VALUE)
 	la=MAX_AMP_VALUE;
 
-      song->voice[v].left_mix = la;
+      left_target = la;
+      right_target = 0;
     }
+
+  song->voice[v].left_mix_target = left_target;
+  song->voice[v].right_mix_target = right_target;
+  if (!song->voice[v].pan_ramp_remaining)
+    {
+      song->voice[v].left_mix = left_target;
+      song->voice[v].right_mix = right_target;
+      song->voice[v].left_mix_start = left_target;
+      song->voice[v].right_mix_start = right_target;
+    }
+}
+
+static void advance_pan_ramp(MidVoice *vp)
+{
+  int remaining = vp->pan_ramp_remaining;
+  int elapsed;
+
+  if (!remaining)
+    return;
+
+  if (remaining == 1)
+    {
+      vp->left_mix = vp->left_mix_target;
+      vp->right_mix = vp->right_mix_target;
+    }
+  else
+    {
+      elapsed = vp->pan_ramp_duration - remaining + 1;
+      vp->left_mix = vp->left_mix_start +
+	(final_volume_t)((vp->left_mix_target - vp->left_mix_start) *
+			(double)elapsed / vp->pan_ramp_duration);
+      vp->right_mix = vp->right_mix_start +
+	(final_volume_t)((vp->right_mix_target - vp->right_mix_start) *
+			(double)elapsed / vp->pan_ramp_duration);
+    }
+  vp->pan_ramp_remaining--;
 }
 
 static int update_envelope(MidSong *song, int v)
@@ -218,6 +256,9 @@ static void mix_mystery_signal(MidSong *song, sample_t *sp, sint32 *lp, int v,
 	count -= cc;
 	while (cc--)
 	  {
+	    advance_pan_ramp(vp);
+	    left = vp->left_mix;
+	    right = vp->right_mix;
 	    s = *sp++;
 	    MIXATION(left);
 	    MIXATION(right);
@@ -233,6 +274,9 @@ static void mix_mystery_signal(MidSong *song, sample_t *sp, sint32 *lp, int v,
 	vp->control_counter = cc - count;
 	while (count--)
 	  {
+	    advance_pan_ramp(vp);
+	    left = vp->left_mix;
+	    right = vp->right_mix;
 	    s = *sp++;
 	    MIXATION(left);
 	    MIXATION(right);
@@ -275,12 +319,12 @@ static void mix_center_signal(MidSong *song, sample_t *sp, sint32 *lp, int v,
       }
     else
       {
-	vp->control_counter = cc - count;
-	while (count--)
-	  {
-	    s = *sp++;
-	    MIXATION(left);
-	    MIXATION(left);
+      vp->control_counter = cc - count;
+      while (count--)
+        {
+          s = *sp++;
+          MIXATION(left);
+          MIXATION(left);
 	  }
 	return;
       }
@@ -376,13 +420,17 @@ static void mix_mono_signal(MidSong *song, sample_t *sp, sint32 *lp, int v,
 
 static void mix_mystery(MidSong *song, sample_t *sp, sint32 *lp, int v, int count)
 {
-  final_volume_t 
-    left = song->voice[v].left_mix, 
-    right = song->voice[v].right_mix;
+  MidVoice *vp = song->voice + v;
+  final_volume_t
+    left = vp->left_mix,
+    right = vp->right_mix;
   sample_t s;
 
   while (count--)
     {
+      advance_pan_ramp(vp);
+      left = vp->left_mix;
+      right = vp->right_mix;
       s = *sp++;
       MIXATION(left);
       MIXATION(right);
@@ -571,4 +619,3 @@ void mix_voice(MidSong *song, sint32 *buf, int v, sint32 c)
 	}
     }
 }
-

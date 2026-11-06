@@ -187,7 +187,10 @@ struct _MidVoice
     sint32 vibrato_sample_increment[MID_VIBRATO_SAMPLE_INCREMENTS];
   int
     vibrato_phase, vibrato_control_ratio, vibrato_control_counter,
-    envelope_stage, control_counter, panning, panned;
+    envelope_stage, control_counter, panning, panned,
+    pan_ramp_remaining, pan_ramp_duration;
+  final_volume_t left_mix_start, right_mix_start;
+  final_volume_t left_mix_target, right_mix_target;
 };
 
 typedef struct _MidInstrument MidInstrument;

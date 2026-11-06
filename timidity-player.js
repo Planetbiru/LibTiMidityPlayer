@@ -404,6 +404,7 @@ class TimidityPlayer {
      *   tracksCount: number,
      *   trackNames: string[],
      *   trackHasNotes: boolean[],
+     *   channelsUsed: number[],
      *   maxTick: number,
      *   totalSeconds: number,
      *   programMap: Array<Array<{tick: number, channel: number, program: number}>>,
@@ -446,6 +447,7 @@ class TimidityPlayer {
         const timeSigEvents = [];
         const trackNames = [];
         const trackHasNotes = [];
+        const channelsUsed = new Set();
         const programEvents = [];
         const bankMsbEvents = [];
         const bankLsbEvents = [];
@@ -491,7 +493,10 @@ class TimidityPlayer {
                     // Channel event — perlu membaca data bytes untuk program/bank
                     const cmd = status >> 4;
                     const ch = status & 0xF;
-                    if (cmd >= 0x8 && cmd <= 0xE) hasChannelEvents = true;
+                    if (cmd >= 0x8 && cmd <= 0xE) {
+                        hasChannelEvents = true;
+                        channelsUsed.add(ch);
+                    }
 
                     if (status >= 0xF8) {
                         // System Realtime (no data bytes)
@@ -594,7 +599,7 @@ class TimidityPlayer {
             totalSeconds = lastMap.timeSec + deltaSec;
         }
 
-        return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, maxTick, totalSeconds,
+        return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, channelsUsed: Array.from(channelsUsed).sort((a, b) => a - b), maxTick, totalSeconds,
             programMap, bankMsbMap, bankLsbMap
         };
     }
