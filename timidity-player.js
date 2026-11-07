@@ -29,6 +29,7 @@ class TimidityPlayer {
      * @param {Function} [options.instrumentLoader] - Optional async patch provider called as
      *   (bank, isDrum, program, file) and expected to return binary GUS patch data.
      * @param {number} [options.bufferSize] - Buffer size for audio processing. Default value is 1024.
+     * @param {number} [options.bufferSizeRealtime] - Buffer size for the real-time synthesizer. Default value is 1024.
      * @param {number} [options.sampleRate] - Sample rate to render PCM. Default value is 44100.
      */
     constructor(options = {}) {
@@ -43,10 +44,13 @@ class TimidityPlayer {
             this.setTimidityCfgLoader(options.timidityCfgLoader);
         }
         this.bufferSize = options.bufferSize || 4096;
+        this.bufferSizeRealtime = options.bufferSizeRealtime || 1024;
         this.sampleRate = options.sampleRate || 44100;
         this.Module = Module;
         this.audioContext = null;
         this.scriptNode = null;
+        this.audioBufferPtr = 0;
+        this.audioBufferCapacity = 0;
         this.songPtr = 0; // Pointer to the C MidSong object
         this.loadedPatches = new Map(); // Map of filename -> Promise
         this.eventListeners = {}; // Event listeners for player events
@@ -688,7 +692,6 @@ class TimidityPlayer {
                     // Removed await this.initRealtimeSong() because we'll chain it
                     let rtPromise = this.initRealtimeSong() || Promise.resolve();
                     
-                    // We use this to reduce latency, especially for playing notes in real time such as noteOn and noteOff
                     this.scriptNode = this.audioContext.createScriptProcessor(this.bufferSize, 0, 2);
 
                     this.scriptNode.onaudioprocess = (e) => {
@@ -697,38 +700,47 @@ class TimidityPlayer {
                         outL.fill(0);
                         outR.fill(0);
 
-                        const pcmBytes = this.bufferSize * 2 * 2;
-                        let bytesReadMain = 0;
+                        const pcmBytes = outL.length * 4;
+                        if (!this.audioBufferPtr || this.audioBufferCapacity < pcmBytes) {
+                            const newBufferPtr = this.Module._malloc(pcmBytes);
+                            if (!newBufferPtr) {
+                                this.emit('onError', "Unable to allocate the audio processing buffer.");
+                                return;
+                            }
+                            if (this.audioBufferPtr) {
+                                this.Module._free(this.audioBufferPtr);
+                            }
+                            this.audioBufferPtr = newBufferPtr;
+                            this.audioBufferCapacity = pcmBytes;
+                        }
 
                         if (this.songPtr !== 0 && !this.isPaused && this.isPlaying) {
-                            const pcmBufferPtr = this.Module._malloc(pcmBytes);
-                            bytesReadMain = this.c.readWave(this.songPtr, pcmBufferPtr, pcmBytes, 0);
+                            const bytesReadMain = this.c.readWave(this.songPtr, this.audioBufferPtr, pcmBytes, 0);
                             if (bytesReadMain > 0) {
-                                const samplesRead = bytesReadMain / 4;
+                                const pcmSamples = this.Module.HEAP16;
+                                const samplesRead = Math.min(outL.length, bytesReadMain >> 2);
+                                const sampleOffset = this.audioBufferPtr >> 1;
                                 for (let i = 0; i < samplesRead; i++) {
-                                    outL[i] = this.Module.HEAP16[(pcmBufferPtr >> 1) + (i * 2)] / 32768.0;
-                                    outR[i] = this.Module.HEAP16[(pcmBufferPtr >> 1) + (i * 2) + 1] / 32768.0;
+                                    outL[i] = pcmSamples[sampleOffset + (i * 2)] / 32768.0;
+                                    outR[i] = pcmSamples[sampleOffset + (i * 2) + 1] / 32768.0;
                                 }
-                            }
-                            this.Module._free(pcmBufferPtr);
-
-                            if (bytesReadMain <= 0) {
+                            } else {
                                 this.stop();
                                 this.emit('onEnded');
                             }
                         }
 
                         if (this.realtimeSongPtr) {
-                            const rtBufferPtr = this.Module._malloc(pcmBytes);
-                            const rtBytes = this.c.readWave(this.realtimeSongPtr, rtBufferPtr, pcmBytes, 0);
+                            const rtBytes = this.c.readWave(this.realtimeSongPtr, this.audioBufferPtr, pcmBytes, 0);
                             if (rtBytes > 0) {
-                                const samplesRead = rtBytes / 4;
+                                const pcmSamples = this.Module.HEAP16;
+                                const samplesRead = Math.min(outL.length, rtBytes >> 2);
+                                const sampleOffset = this.audioBufferPtr >> 1;
                                 for (let i = 0; i < samplesRead; i++) {
-                                    outL[i] += this.Module.HEAP16[(rtBufferPtr >> 1) + (i * 2)] / 32768.0;
-                                    outR[i] += this.Module.HEAP16[(rtBufferPtr >> 1) + (i * 2) + 1] / 32768.0;
+                                    outL[i] += pcmSamples[sampleOffset + (i * 2)] / 32768.0;
+                                    outR[i] += pcmSamples[sampleOffset + (i * 2) + 1] / 32768.0;
                                 }
                             }
-                            this.Module._free(rtBufferPtr);
                         }
                     };
 
@@ -754,7 +766,7 @@ class TimidityPlayer {
      * Initializes the real-time synthesizer song instance if it hasn't been created yet.
      * This prepares an empty song specifically used for real-time MIDI input.
      * @param {Object} [options={}] - Options for creating the real-time song.
-     * @param {number} [options.bufferSize=1024] - Audio buffer size in samples.
+     * @param {number} [options.bufferSize] - Overrides the configured real-time buffer size.
      * @returns {Promise<void>}
      */
     initRealtimeSong(options = {}) {
@@ -772,7 +784,7 @@ class TimidityPlayer {
         const midiDataPtr = this.Module._malloc(emptyMidi.length);
         this.Module.HEAPU8.set(emptyMidi, midiDataPtr);
 
-        const bufferSize = options.bufferSize || 1024;
+        const bufferSize = options.bufferSize || this.bufferSizeRealtime;
 
         let optionsPtr;
         if (this.c.createOptions) {
@@ -1587,6 +1599,11 @@ class TimidityPlayer {
      */
     shutdown() {
         this.stop();
+        if (this.audioBufferPtr) {
+            this.Module._free(this.audioBufferPtr);
+            this.audioBufferPtr = 0;
+            this.audioBufferCapacity = 0;
+        }
         this.c.exit(); // Shutdown libTiMidity
         if (this.audioContext) {
             this.audioContext.close();
