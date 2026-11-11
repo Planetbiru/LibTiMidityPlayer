@@ -38,9 +38,11 @@ Package contents:
 
 ─── Technical notes ───────────────────────
   - All patches are generated purely from JavaScript oscillators.
-  - Melodic: 16-bit signed PCM with sustain looping enabled for instruments
-    that sustain (strings, brass, reed, pipe, pad, lead, organ, ensemble,
-    overdriven/distortion guitar, and synth bass), from loopStart → loopEnd.
+  - Melodic: each preset defines whether its sample uses sustain looping.
+    Loops are used for sustained instruments (organs, synth bass, bowed
+    strings, ensembles, brass, reeds, pipes, leads, pads, bagpipe, fiddle,
+    shanai, guitar harmonics, and overdriven/distortion guitars).
+    Other struck, plucked, and one-shot presets use non-looped samples.
   - Looped samples include MENV and a default envelope (attack ~10ms,
     release ~148ms) so note-off releases notes correctly.
   - Drum   : one-shot, no loop.
