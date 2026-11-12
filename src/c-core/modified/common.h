@@ -38,11 +38,12 @@ typedef struct _PathList PathList;
 extern int  timi_add_pathlist(const char *s, size_t len);
 extern void timi_free_pathlist(void);
 
-/* in case someone wants to compile with a different malloc() than stdlib */
-#define timi_malloc  malloc
-#define timi_calloc  calloc
-#define timi_realloc realloc
-#define timi_free    free
+/* C-core allocations share a configurable byte limit; zero means unlimited. */
+void *timi_malloc(size_t size);
+void *timi_calloc(size_t count, size_t size);
+void *timi_realloc(void *ptr, size_t size);
+void timi_free(void *ptr);
+int mid_set_memory_limit(size_t limit);
 
 /* timi_strtokr() is a strtok_r() replacement */
 char *timi_strtokr(char *s1, const char *s2, char **ptr);

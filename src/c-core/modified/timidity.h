@@ -158,6 +158,10 @@ extern "C" {
  */
   TIMI_EXPORT extern void mid_exit (void);
 
+/* Set a limit for C-core allocations in bytes. Zero means unlimited.
+ * Returns zero if the limit is below the current allocation usage.
+ */
+  TIMI_EXPORT extern int mid_set_memory_limit (size_t limit);
 
 /* Input Stream Functions
  * ======================

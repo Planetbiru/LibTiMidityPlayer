@@ -50,6 +50,127 @@
 #include "common.h"
 #include "ospaths.h"
 
+typedef union {
+    size_t size;
+    long double alignment;
+    void *pointer;
+} TimiAllocationHeader;
+
+static size_t timi_memory_limit = 0;
+static size_t timi_memory_usage = 0;
+
+static int timi_allocation_fits(size_t size)
+{
+    size_t header_size = sizeof(TimiAllocationHeader);
+    size_t total_size;
+
+    if (size > (size_t)-1 - header_size)
+        return 0;
+
+    total_size = header_size + size;
+    if (timi_memory_usage > (size_t)-1 - total_size)
+        return 0;
+    if (timi_memory_limit &&
+        (total_size > timi_memory_limit ||
+         timi_memory_usage > timi_memory_limit - total_size))
+        return 0;
+
+    return 1;
+}
+
+void *timi_malloc(size_t size)
+{
+    TimiAllocationHeader *header;
+    size_t total_size;
+
+    if (!timi_allocation_fits(size))
+        return NULL;
+
+    total_size = sizeof(TimiAllocationHeader) + size;
+    header = (TimiAllocationHeader *)malloc(total_size);
+    if (!header)
+        return NULL;
+
+    header->size = size;
+    timi_memory_usage += total_size;
+    return header + 1;
+}
+
+void *timi_calloc(size_t count, size_t size)
+{
+    void *ptr;
+
+    if (size && count > (size_t)-1 / size)
+        return NULL;
+
+    size *= count;
+    ptr = timi_malloc(size);
+    if (ptr)
+        memset(ptr, 0, size);
+    return ptr;
+}
+
+void *timi_realloc(void *ptr, size_t size)
+{
+    TimiAllocationHeader *header;
+    TimiAllocationHeader *new_header;
+    size_t old_total_size;
+    size_t new_total_size;
+
+    if (!ptr)
+        return timi_malloc(size);
+    if (!size) {
+        timi_free(ptr);
+        return NULL;
+    }
+
+    header = ((TimiAllocationHeader *)ptr) - 1;
+    old_total_size = sizeof(TimiAllocationHeader) + header->size;
+    if (size > (size_t)-1 - sizeof(TimiAllocationHeader))
+        return NULL;
+
+    new_total_size = sizeof(TimiAllocationHeader) + size;
+    if (new_total_size > old_total_size) {
+        size_t increase = new_total_size - old_total_size;
+        if (timi_memory_usage > (size_t)-1 - increase ||
+            (timi_memory_limit &&
+             (increase > timi_memory_limit ||
+              timi_memory_usage > timi_memory_limit - increase)))
+            return NULL;
+    }
+
+    new_header = (TimiAllocationHeader *)realloc(header, new_total_size);
+    if (!new_header)
+        return NULL;
+
+    new_header->size = size;
+    timi_memory_usage = timi_memory_usage - old_total_size + new_total_size;
+    return new_header + 1;
+}
+
+void timi_free(void *ptr)
+{
+    TimiAllocationHeader *header;
+    size_t total_size;
+
+    if (!ptr)
+        return;
+
+    header = ((TimiAllocationHeader *)ptr) - 1;
+    total_size = sizeof(TimiAllocationHeader) + header->size;
+    timi_memory_usage -= total_size;
+    free(header);
+}
+
+int mid_set_memory_limit(size_t limit)
+{
+    if (limit && limit < timi_memory_usage)
+        return 0;
+
+    timi_memory_limit = limit;
+    return 1;
+}
+
 /* The paths in this list will be tried by timi_openfile() */
 struct _PathList {
     char *path;
