@@ -46,6 +46,7 @@ class SongPlayer extends TimidityPlayer {
 
         /** @type {Boolean} */
         this._reloading = false;
+        this._audioOnlyMode = false;
 
         /* --- Virtual clock (jalan setelah MIDI berakhir tapi audio masih main) --- */
         this._lastSongTime       = 0;      // song-time terakhir yang diketahui
@@ -54,22 +55,9 @@ class SongPlayer extends TimidityPlayer {
         this._virtualAnchorSong  = 0;      // song-time saat anchor virtual di-set
         this._virtualAnchorAudio = 0;     // audioContext.currentTime saat anchor
 
-        // Hook playback events to sync audio clips
-        // onPlaying internal — update lastSongTime + sync clip.
+        // Keep the latest song position for pause, resume, and seek operations.
         this.on('onPlaying', (tick, timeSec) => {
             this._lastSongTime = timeSec;
-            try {
-                this._syncAudioClips(timeSec);
-            } catch (err) {
-                console.error('[SongPlayer] _syncAudioClips error:', err);
-            }
-        });
-
-        // onStop = benar-benar berhenti → matikan semua clip + clock virtual.
-        this.on('onStop', () => {
-            this._stopPostMidiClock();
-            try { this._stopAllAudioClips(); }
-            catch (err) { console.error('[SongPlayer] stop hook error:', err); }
         });
 
         // onEnded = MIDI selesai, TAPI audio mungkin masih panjang.
@@ -99,6 +87,7 @@ class SongPlayer extends TimidityPlayer {
         // Normalize keys to camelCase first
         const normalized = this.toCamelCaseKeys(bundle);
         this._stopAllAudioClips();
+        this._audioOnlyMode = false;
         this.audioAssets.clear();
         this.audioTracks = [];
 
@@ -238,6 +227,28 @@ class SongPlayer extends TimidityPlayer {
      */
     clearAudioTracks() { this._stopAllAudioClips(); this.audioTracks = []; }
 
+    /**
+     * Mute or unmute an audio track during playback.
+     * @param {number} trackIndex - Zero-based audio track index.
+     * @param {boolean} muted - Whether the track should be muted.
+     */
+    setAudioTrackMute(trackIndex, muted) {
+        const track = this.audioTracks[trackIndex];
+        if (!Number.isInteger(trackIndex) || !track) {
+            throw new RangeError('Audio track index is out of range.');
+        }
+
+        const wasMuted = track.muted;
+        track.muted = !!muted;
+        if (track.muted) {
+            for (const [key, activeClip] of this._activeClips) {
+                if (activeClip.trackIndex === trackIndex) this._stopClip(key);
+            }
+        } else if (wasMuted && this.isPlaying && !this.isPaused) {
+            this._scheduleAudioClipsFrom(this._lastSongTime);
+        }
+    }
+
     /* ================================================================== */
     /* Duration                                                           */
     /* ================================================================== */
@@ -280,31 +291,42 @@ class SongPlayer extends TimidityPlayer {
      */
     async play(offset = 0, options = {}) {
         if (!this.audioContext) return;
+        if (this._audioOnlyMode && this.isPlaying && !this.isPaused) return;
 
         // Batalkan sisa clock virtual bila user klik Play saat lagu sedang
         // menyelesaikan ekor audio-nya.
         this._stopPostMidiClock();
+
+        if (this._audioOnlyMode && this.isPaused && this.songPtr === 0) {
+            return this._playAudioOnly(this._lastSongTime, options, true);
+        }
 
         if (this.playingInterval !== null && !this.isPaused && this.songPtr !== 0) {
             return;
         }
 
         if (this.isPaused && this.songPtr !== 0) {
-            this._lastSongTime = 0;
-            return this.resume();
+            const resumeTime = this._lastSongTime;
+            const resumePromise = this.resume();
+            this._scheduleAudioClipsFrom(resumeTime);
+            return resumePromise;
         }
 
         if (this.songPtr === 0) {
             if (!this.lastMidiData) {
-                console.warn('[SongPlayer] play(): tidak ada MIDI ter-cache, hanya audio clip.');
-                return;
+                return this._playAudioOnly(offset, options);
             }
             if (this._reloading) return;
             this._reloading = true;
             try {
                 const ok = await this.load(this.lastMidiData);
                 if (!ok) {
+                    if (this._hasAudioClips()) {
+                        this.lastMidiData = null;
+                        return this._playAudioOnly(offset, options);
+                    }
                     console.error('[SongPlayer] Gagal reload MIDI.');
+                    this.emit('onError', 'Unable to load MIDI data.');
                     return;
                 }
                 this._ensureTempoMap();
@@ -317,23 +339,65 @@ class SongPlayer extends TimidityPlayer {
         this._ensureClipGainNode();
         this._lastSongTime = offset || 0;
         super.play(offset, options);
+        this._scheduleAudioClipsFrom(this._lastSongTime);
+    }
+
+    async _playAudioOnly(offset = 0, options = {}, resume = false) {
+        if (!this._hasAudioClips()) {
+            console.warn('[SongPlayer] play(): tidak ada MIDI atau audio clip.');
+            return;
+        }
+
+        this._stopAllAudioClips();
+        this._ensureClipGainNode();
+        await this.audioContext.resume();
+
+        if (typeof options.volume === 'number' && !isNaN(options.volume)) {
+            this.setVolume(Math.max(0, Math.min(100, options.volume)));
+        }
+        this._lastSongTime = Math.max(0, Number(resume ? this._lastSongTime : offset) || 0);
+        this._audioOnlyMode = true;
+        this.isPlaying = true;
+        this.isPaused = false;
+        this._scheduleAudioClipsFrom(this._lastSongTime);
+        this.emit(resume ? 'onResume' : 'onPlay');
+        this._startPostMidiClock();
     }
 
     /**
      * Pause playback and stop all audio clips.
      */
     pause() {
+        const audioOnly = this._audioOnlyMode && this.songPtr === 0;
         this._stopPostMidiClock();
-        super.pause();
         this._stopAllAudioClips();
+        if (audioOnly) {
+            if (this.isPlaying) {
+                this.isPlaying = false;
+                this.isPaused = true;
+                this.emit('onPause');
+            }
+            return;
+        }
+        super.pause();
     }
 
     /**
      * Stop playback and reset all audio clips.
      */
     stop() {
+        const audioOnly = this._audioOnlyMode && this.songPtr === 0;
         this._stopPostMidiClock();
         this._stopAllAudioClips();
+        if (audioOnly) {
+            const wasActive = this.isPlaying || this.isPaused;
+            this.isPlaying = false;
+            this.isPaused = false;
+            this._lastSongTime = 0;
+            this._audioOnlyMode = false;
+            if (wasActive) this.emit('onStop');
+            return;
+        }
         super.stop();
     }
 
@@ -343,10 +407,14 @@ class SongPlayer extends TimidityPlayer {
      * @param {number} timeInSeconds - Target playback position.
      */
     seek(timeInSeconds) {
+        const resumeAudioOnly = this._audioOnlyMode && this.songPtr === 0 && this.isPlaying;
+        const resumeMidi = this.isPlaying && !this.isPaused && this.songPtr !== 0;
         this._stopPostMidiClock();
         this._stopAllAudioClips();
         this._lastSongTime = timeInSeconds;
         super.seek(timeInSeconds);
+        if (resumeAudioOnly || resumeMidi) this._scheduleAudioClipsFrom(timeInSeconds);
+        if (resumeAudioOnly) this._startPostMidiClock();
     }
 
     /**
@@ -532,51 +600,39 @@ class SongPlayer extends TimidityPlayer {
     }
 
     /* ================================================================== */
-    /*  Internal — real-time clip sync                                     */
+    /*  Internal — audio clip scheduling                                   */
     /* ================================================================== */
 
-    _syncAudioClips(songTime) {
-        if (!this.audioContext) return;
-        const gain = this._ensureClipGainNode();
-        if (!gain) return;
+    // Schedule on the AudioContext clock, never from animation-frame callbacks.
+    _scheduleAudioClipsFrom(songTime) {
+        if (!this.audioContext || !Number.isFinite(songTime)) return;
+        if (!this._ensureClipGainNode()) return;
 
-        const LOOKAHEAD = 0.05;                       // seconds
         const now = this.audioContext.currentTime;
-        const hasSolo = this.audioTracks.some(t => t.solo);
+        const hasSolo = this.audioTracks.some(track => track.solo);
 
-        for (let ti = 0; ti < this.audioTracks.length; ti++) {
-            const track = this.audioTracks[ti];
+        for (let trackIndex = 0; trackIndex < this.audioTracks.length; trackIndex++) {
+            const track = this.audioTracks[trackIndex];
             const audible = hasSolo ? !!track.solo : !track.muted;
-            const clips = track.clips || [];
+            if (!audible) continue;
 
-            for (const clip of clips) {
+            for (const clip of track.clips || []) {
                 if (clip.isDeleted) continue;
 
-                const key = this._getClipKey(clip, ti);
-                const existing = this._activeClips.get(key);
+                const key = this._getClipKey(clip, trackIndex);
+                if (this._activeClips.has(key)) continue;
+
                 const startSec = this._clipStartSec(clip);
-                const endSec   = this._clipEndSec(clip);
+                const endSec = this._clipEndSec(clip);
+                if (songTime >= endSec) continue;
 
-                const shouldBeActive =
-                    audible &&
-                    songTime < endSec &&
-                    songTime >= startSec - LOOKAHEAD;
-
-                if (!shouldBeActive) {
-                    if (existing) this._stopClip(key);
-                    continue;
-                }
-                if (existing) continue;
-
-                const songTimeAtStart   = Math.max(songTime, startSec);
-                const audioTimeAtStart  = now + (songTimeAtStart - songTime);
-                const offsetInClip      = songTimeAtStart - startSec;
-                const remaining         = endSec - songTimeAtStart;
-
+                const songTimeAtStart = Math.max(songTime, startSec);
+                const offsetInClip = songTimeAtStart - startSec;
+                const remaining = endSec - songTimeAtStart;
                 if (remaining <= 0) continue;
-                if (audioTimeAtStart - now > LOOKAHEAD) continue;
 
-                this._startClip(clip, ti, offsetInClip, remaining, audioTimeAtStart);
+                const when = now + Math.max(0, startSec - songTime);
+                this._startClip(clip, trackIndex, offsetInClip, remaining, when);
             }
         }
     }
@@ -599,7 +655,11 @@ class SongPlayer extends TimidityPlayer {
             const trimOffsetSec = this._safeTickToTime(clip.trimStartOffsetTicks || 0);
             const assetOffset = trimOffsetSec + offsetInClip;
 
-            if (assetOffset >= source.buffer.duration) return;
+            if (assetOffset >= source.buffer.duration || duration <= 0) {
+                source.disconnect();
+                gainNode.disconnect();
+                return;
+            }
 
             const maxDuration  = source.buffer.duration - assetOffset;
             const playDuration = Math.min(duration, maxDuration);
@@ -645,10 +705,7 @@ class SongPlayer extends TimidityPlayer {
     }
 
     /**
-     * Dipanggil dari event 'onEnded' TimidityPlayer.
-     * Jika masih ada audio clip yang belum selesai, jalankan clock virtual
-     * berbasis audioContext.currentTime supaya _syncAudioClips tetap
-     * menerima "song time" sampai durasi lagu tercapai.
+     * Continue the playback clock after MIDI ends while scheduled audio clips remain.
      */
     _startPostMidiClock() {
         // Idempotent — jangan dobel clock.
@@ -659,15 +716,13 @@ class SongPlayer extends TimidityPlayer {
 
         // Tidak ada clip → tidak ada yang perlu diteruskan.
         if (!this._hasAudioClips()) {
-            this._stopAllAudioClips();
-            this.emit('onSongFinished', startSongTime);
+            this._finalizePostMidi();
             return;
         }
 
         // MIDI sudah melewati (atau sudah setara dengan) durasi total.
         if (totalDur <= 0 || startSongTime >= totalDur - 0.02) {
-            this._stopAllAudioClips();
-            this.emit('onSongFinished', startSongTime);
+            this._finalizePostMidi();
             return;
         }
 
@@ -716,6 +771,10 @@ class SongPlayer extends TimidityPlayer {
     _finalizePostMidi() {
         this._stopPostMidiClock();
         this._stopAllAudioClips();
+        if (this._audioOnlyMode) {
+            this.isPlaying = false;
+            this.isPaused = false;
+        }
 
         // Event baru: "playback (MIDI + audio) benar-benar selesai".
         // Berbeda dari 'onEnded' yang hanya menandai akhir MIDI.
