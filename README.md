@@ -85,6 +85,23 @@ player.on('onInit', async () => {
 player.init();
 ```
 
+### Limiting C-core memory
+
+The C core can optionally cap its own `timi_malloc`/`timi_calloc`/`timi_realloc`
+allocations. Set the limit in MiB when constructing the player:
+
+```javascript
+const player = new TimidityPlayer({ memoryLimitMB: 256 });
+```
+
+The limit is applied before the C engine initializes. Omit the option or set it
+to `0` for no C-core allocation cap. This does not cap JavaScript allocations
+or change the WebAssembly heap maximum; `libtimidity.js` must be rebuilt with
+the memory-limit export and `-s ALLOW_MEMORY_GROWTH=1` for the option to work.
+The cap is global to the shared WebAssembly module, so player instances using
+the same module share it.
+See [convert-to-js.md](./convert-to-js.md) for the build commands.
+
 ### Handling Real-Time MIDI Input
 
 If you have a MIDI controller connected, you can directly inject real-time events into the engine:
@@ -186,4 +203,3 @@ LibTiMidityPlayer/
 - If distributing binaries (e.g., npm package or DLL), include a link to this repository so users can access the modified source code as required by LGPL.
 
 - The JavaScript binding (`libtimidity.js`) is fully MIT-licensed, making it free to use in both commercial and open-source projects.
-

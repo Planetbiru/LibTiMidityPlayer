@@ -31,10 +31,19 @@ class TimidityPlayer {
      * @param {number} [options.bufferSize] - Buffer size for audio processing. Default value is 1024.
      * @param {number} [options.bufferSizeRealtime] - Buffer size for the real-time synthesizer. Default value is 1024.
      * @param {number} [options.sampleRate] - Sample rate to render PCM. Default value is 44100.
+     * @param {number} [options.memoryLimitMB] - Maximum memory used by C-core allocations in MiB. Zero means unlimited.
      */
     constructor(options = {}) {
+        if (options.memoryLimitMB !== undefined &&
+            (!Number.isFinite(options.memoryLimitMB) || options.memoryLimitMB < 0 ||
+             options.memoryLimitMB * 1024 * 1024 > 0xFFFFFFFF)) {
+            throw new RangeError('memoryLimitMB must be non-negative and less than 4096 MiB.');
+        }
         this.virtualPatchDir = '/gus-patch'; // The absolute path inside the virtual filesystem
         this.patchUrlBase = options.patchUrlBase;
+        this.memoryLimitBytes = options.memoryLimitMB === undefined
+            ? undefined
+            : Math.floor(options.memoryLimitMB * 1024 * 1024);
         this.instrumentLoader = null;
         if (options.instrumentLoader !== undefined) {
             this.setInstrumentLoader(options.instrumentLoader);
@@ -177,6 +186,9 @@ class TimidityPlayer {
             updateEvents: cwrap('mid_song_update_events', 'number', ['number', 'number']),
             getMasterPeak: cwrap('mid_song_get_master_peak', 'number', ['number', 'number', 'number']),
             forceMonoPan: cwrap('mid_song_force_mono_pan', null, ['number']),
+            setMemoryLimit: typeof this.Module._mid_set_memory_limit === 'function'
+                ? cwrap('mid_set_memory_limit', 'number', ['number'])
+                : null,
             malloc: cwrap('malloc', 'number', ['number']),
             createOptions: cwrap('mid_create_options', 'number', ['number', 'number', 'number', 'number']),
         };
@@ -681,6 +693,18 @@ class TimidityPlayer {
         }
 
         return this._waitForRuntime().then(async () => {
+            if (this.memoryLimitBytes !== undefined) {
+                if (!this.c.setMemoryLimit) {
+                    if (this.memoryLimitBytes !== 0) {
+                        this.emit('onError', 'This libTiMidity build does not support memoryLimitMB. Rebuild it with the memory-limit C API.');
+                        return false;
+                    }
+                } else if (!this.c.setMemoryLimit(this.memoryLimitBytes)) {
+                    this.emit('onError', 'memoryLimitMB is below the C-core memory already allocated.');
+                    return false;
+                }
+            }
+
             const config = await this._loadTimidityCfg();
             // Use the virtual path for initialization inside the WASM module.
             const configPath = `${this.virtualPatchDir}/timidity.cfg`;
