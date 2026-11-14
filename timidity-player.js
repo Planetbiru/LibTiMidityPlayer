@@ -37,7 +37,7 @@ class TimidityPlayer {
         if (options.memoryLimitMB !== undefined &&
             (!Number.isFinite(options.memoryLimitMB) || options.memoryLimitMB < 0 ||
              options.memoryLimitMB * 1024 * 1024 > 0xFFFFFFFF)) {
-            throw new RangeError('memoryLimitMB must be non-negative and less than 4096 MiB.');
+            throw new RangeError('memoryLimitMB must be between 0 and 4095.999 MiB.');
         }
         this.virtualPatchDir = '/gus-patch'; // The absolute path inside the virtual filesystem
         this.patchUrlBase = options.patchUrlBase;
@@ -62,6 +62,7 @@ class TimidityPlayer {
         this.audioBufferCapacity = 0;
         this.songPtr = 0; // Pointer to the C MidSong object
         this.loadedPatches = new Map(); // Map of filename -> Promise
+        this.loadedPatchFiles = new Set();
         this.eventListeners = {}; // Event listeners for player events
         this.playingInterval = null;
         this.isPlaying = false;
@@ -258,10 +259,11 @@ class TimidityPlayer {
      * configured provider or from the server. It tracks progress and emits events.
      *
      * Events emitted:
-     * - 'onInstrumentLoading': emitted each time a patch starts or finishes loading,
-     *   with arguments (loadedCount, totalCount, fileName).
-     * - 'onInstrumentLoaded': emitted once all patches are loaded, with the total
-     *   number of loaded patches.
+     * - 'onInstrumentList': required files and resolved instrument identities.
+     * - 'onInstrumentStatus': each file's loading, loaded, or failed state.
+     * - 'onInstrumentLoading': emitted before loading starts and after each file
+     *   finishes, with arguments (loadedCount, totalCount, fileName).
+     * - 'onInstrumentLoaded': emitted once all required files are ready.
      *
      * @param {string} patchListString - Newline-separated list of patch filenames to load.
      * @param {{bank: number, isDrum: boolean, program: number}|null} [instrument=null] -
@@ -291,39 +293,66 @@ class TimidityPlayer {
             }
         }
 
+        const entries = requiredPatches.map(file => {
+            const resolved = instrument || instrumentsByFile.get(file);
+            return {
+                file,
+                bank: resolved ? resolved.bank : null,
+                isDrum: resolved ? resolved.isDrum : null,
+                program: resolved ? resolved.program : null,
+                status: this.loadedPatchFiles.has(file)
+                    ? 'loaded'
+                    : this.loadedPatches.has(file) ? 'loading' : 'pending'
+            };
+        });
+        this.emit('onInstrumentList', entries);
+
         let loadedCount = 0;
         this.emit('onInstrumentLoading', loadedCount, total, '');
-
-        const preloadPromises = requiredPatches.map(file => {
-            if (this.loadedPatches.has(file)) {
-                loadedCount++;
-                this.emit('onInstrumentLoading', loadedCount, total, file);
-                return this.loadedPatches.get(file);
-            }
-            
+        for (const entry of entries) {
+            const {file} = entry;
             const patchInstrument = instrument || instrumentsByFile.get(file);
             if (this.instrumentLoader && !patchInstrument) {
+                this.emit('onInstrumentStatus', file, 'failed');
                 throw new Error(`Cannot resolve bank, drum status, and program for patch: ${file}`);
             }
 
-            const promise = this._loadInstrumentPatch(
-                patchInstrument ? patchInstrument.bank : 0,
-                patchInstrument ? patchInstrument.isDrum : false,
-                patchInstrument ? patchInstrument.program : 0,
-                file
-            ).then(() => {
+            try {
+                let promise = this.loadedPatches.get(file);
+                if (promise) {
+                    if (!this.loadedPatchFiles.has(file)) {
+                        this.emit('onInstrumentStatus', file, 'loading');
+                    }
+                } else {
+                    this.emit('onInstrumentStatus', file, 'loading');
+                    promise = this._loadInstrumentPatch(
+                        patchInstrument ? patchInstrument.bank : 0,
+                        patchInstrument ? patchInstrument.isDrum : false,
+                        patchInstrument ? patchInstrument.program : 0,
+                        file
+                    ).then(byteLength => {
+                        this.loadedPatchFiles.add(file);
+                        return byteLength;
+                    });
+                    this.loadedPatches.set(file, promise);
+                }
+
+                const byteLength = await promise;
+                this.loadedPatchFiles.add(file);
                 loadedCount++;
+                this.emit('onInstrumentStatus', file, 'loaded', byteLength);
                 this.emit('onInstrumentLoading', loadedCount, total, file);
-            });
+            } catch (error) {
+                this.loadedPatchFiles.delete(file);
+                if (this.loadedPatches.get(file) === promise) {
+                    this.loadedPatches.delete(file);
+                }
+                this.emit('onInstrumentStatus', file, 'failed');
+                throw error;
+            }
+        }
 
-            this.loadedPatches.set(file, promise);
-            promise.catch(() => this.loadedPatches.delete(file));
-            return promise;
-        });
-
-        return Promise.all(preloadPromises).then(() => {
-            this.emit('onInstrumentLoaded', this.loadedPatches.size);
-        });
+        this.emit('onInstrumentLoaded', total);
     }
 
     /**
@@ -357,7 +386,7 @@ class TimidityPlayer {
                 throw new TypeError(`instrumentLoader must return binary patch data for: ${file}`);
             }
             this.Module.FS.writeFile(`${directory}/${filename}`, bytes);
-            return;
+            return bytes.byteLength;
         }
 
         return new Promise((resolve, reject) => {
@@ -695,11 +724,10 @@ class TimidityPlayer {
         return this._waitForRuntime().then(async () => {
             if (this.memoryLimitBytes !== undefined) {
                 if (!this.c.setMemoryLimit) {
-                    if (this.memoryLimitBytes !== 0) {
-                        this.emit('onError', 'This libTiMidity build does not support memoryLimitMB. Rebuild it with the memory-limit C API.');
-                        return false;
-                    }
-                } else if (!this.c.setMemoryLimit(this.memoryLimitBytes)) {
+                    this.emit('onError', 'This libTiMidity build does not support memoryLimitMB. Rebuild it with the memory-limit C API.');
+                    return false;
+                }
+                if (!this.c.setMemoryLimit(this.memoryLimitBytes)) {
                     this.emit('onError', 'memoryLimitMB is below the C-core memory already allocated.');
                     return false;
                 }
