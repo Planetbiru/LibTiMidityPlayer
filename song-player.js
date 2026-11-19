@@ -335,11 +335,17 @@ class SongPlayer extends TimidityPlayer {
             }
         }
 
+        // Start scheduling only after the context is running; on initial play,
+        // MIDI and audio clips must share the same active AudioContext clock.
+        if (this.audioContext.state !== 'running') {
+            await this.audioContext.resume();
+        }
+
         this._stopAllAudioClips();
         this._ensureClipGainNode();
         this._lastSongTime = offset || 0;
-        super.play(offset, options);
         this._scheduleAudioClipsFrom(this._lastSongTime);
+        super.play(offset, options);
     }
 
     async _playAudioOnly(offset = 0, options = {}, resume = false) {

@@ -57,6 +57,11 @@ The standard libTiMidity engine has been heavily modified and extended to meet t
    - Provides flexibility for hybrid arrangements, such as audio drums plus MIDI strings.
    - During rendering, the final result can be a single audio mix that combines both sound sources.
 
+7. **Integration with sample creator applications**
+   - Enables MIDI playback and instrument control to be incorporated into sample creation workflows.
+   - Supports consistent preview, generation, and offline export of instrument or loop samples.
+   - Provides reusable synthesis and rendering facilities without limiting the player to sample creation use cases.
+
 ## Quick Start
 
 Include the scripts in your HTML:
