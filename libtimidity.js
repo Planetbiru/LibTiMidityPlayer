@@ -3902,7 +3902,7 @@ function asmFunc(imports) {
          HEAP32[($4_1 + 36 | 0) >> 2] = HEAP32[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0;
         }
        }
-       FUNCTION_TABLE[HEAP32[(0 + 79840 | 0) >> 2] | 0 | 0](HEAP32[(HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) >> 2] | 0, HEAP32[($4_1 + 44 | 0) >> 2] | 0, (HEAPU8[($4_1 + 43 | 0) >> 0] | 0) & 255 | 0, (HEAPU8[($4_1 + 42 | 0) >> 0] | 0) & 255 | 0, (HEAPU8[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 19 | 0) >> 0] | 0) & 255 | 0, HEAP32[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0, HEAP32[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 12 | 0) >> 2] | 0, HEAP32[($4_1 + 36 | 0) >> 2] | 0);
+       FUNCTION_TABLE[HEAP32[(0 + 79840 | 0) >> 2] | 0 | 0](HEAP32[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 4 | 0) >> 2] | 0, HEAP32[($4_1 + 44 | 0) >> 2] | 0, (HEAPU8[($4_1 + 43 | 0) >> 0] | 0) & 255 | 0, (HEAPU8[($4_1 + 42 | 0) >> 0] | 0) & 255 | 0, (HEAPU8[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 19 | 0) >> 0] | 0) & 255 | 0, HEAP32[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0, HEAP32[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 12 | 0) >> 2] | 0, HEAP32[($4_1 + 36 | 0) >> 2] | 0);
       }
       $18_1 = (HEAPU8[((HEAP32[((HEAP32[($4_1 + 72 | 0) >> 2] | 0) + 14424 | 0) >> 2] | 0) + 19 | 0) >> 0] | 0) + -1 | 0;
       block18 : {
@@ -5391,14 +5391,14 @@ function asmFunc(imports) {
  
  function $80($0_1) {
   $0_1 = $0_1 | 0;
-  var $1_1 = 0, i64toi32_i32$0 = 0, i64toi32_i32$1 = 0, i64toi32_i32$2 = 0, $9_1 = 0, $52_1 = 0, $52$hi = 0, $55_1 = 0, $55$hi = 0;
-  $1_1 = global$0 - 16 | 0;
+  var $1_1 = 0, i64toi32_i32$0 = 0, i64toi32_i32$1 = 0, i64toi32_i32$2 = 0, $9_1 = 0, $56_1 = 0, $56$hi = 0, $59_1 = 0, $59$hi = 0, wasm2js_i32$0 = 0, wasm2js_i32$1 = 0;
+  $1_1 = global$0 - 32 | 0;
   global$0 = $1_1;
-  HEAP32[($1_1 + 12 | 0) >> 2] = $0_1;
+  HEAP32[($1_1 + 28 | 0) >> 2] = $0_1;
   block2 : {
    block1 : {
     block : {
-     if (!((HEAP32[($1_1 + 12 | 0) >> 2] | 0 | 0) != (0 | 0) & 1 | 0)) {
+     if (!((HEAP32[($1_1 + 28 | 0) >> 2] | 0 | 0) != (0 | 0) & 1 | 0)) {
       break block
      }
      if ((HEAP32[(0 + 79840 | 0) >> 2] | 0 | 0) != (0 | 0) & 1 | 0) {
@@ -5407,42 +5407,43 @@ function asmFunc(imports) {
     }
     break block2;
    }
-   HEAP32[($1_1 + 8 | 0) >> 2] = 0;
+   (wasm2js_i32$0 = $1_1, wasm2js_i32$1 = $119(HEAP32[($1_1 + 28 | 0) >> 2] | 0 | 0) | 0), HEAP32[(wasm2js_i32$0 + 20 | 0) >> 2] = wasm2js_i32$1;
+   HEAP32[($1_1 + 24 | 0) >> 2] = 0;
    label : while (1) {
-    if (!((HEAP32[($1_1 + 8 | 0) >> 2] | 0 | 0) < (HEAP32[((HEAP32[($1_1 + 12 | 0) >> 2] | 0) + 14396 | 0) >> 2] | 0 | 0) & 1 | 0)) {
+    if (!((HEAP32[($1_1 + 24 | 0) >> 2] | 0 | 0) < (HEAP32[((HEAP32[($1_1 + 28 | 0) >> 2] | 0) + 14396 | 0) >> 2] | 0 | 0) & 1 | 0)) {
      break block2
     }
     block3 : {
-     if (!((HEAPU8[(((HEAP32[($1_1 + 12 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 8 | 0) >> 2] | 0, 264) | 0) >> 0] | 0 | 0) == (1 | 0) & 1 | 0)) {
+     if (!((HEAPU8[(((HEAP32[($1_1 + 28 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 24 | 0) >> 2] | 0, 264) | 0) >> 0] | 0 | 0) == (1 | 0) & 1 | 0)) {
       break block3
      }
-     i64toi32_i32$2 = HEAP32[($1_1 + 12 | 0) >> 2] | 0;
+     i64toi32_i32$2 = HEAP32[($1_1 + 28 | 0) >> 2] | 0;
      i64toi32_i32$0 = HEAP32[(i64toi32_i32$2 + 14436 | 0) >> 2] | 0;
      i64toi32_i32$1 = i64toi32_i32$0 >> 31 | 0;
      $9_1 = i64toi32_i32$0;
      i64toi32_i32$0 = 0;
      i64toi32_i32$0 = __wasm_i64_mul($9_1 | 0, i64toi32_i32$1 | 0, 1e3 | 0, i64toi32_i32$0 | 0) | 0;
      i64toi32_i32$1 = i64toi32_i32$HIGH_BITS;
-     $52_1 = i64toi32_i32$0;
-     $52$hi = i64toi32_i32$1;
-     i64toi32_i32$2 = HEAP32[($1_1 + 12 | 0) >> 2] | 0;
+     $56_1 = i64toi32_i32$0;
+     $56$hi = i64toi32_i32$1;
+     i64toi32_i32$2 = HEAP32[($1_1 + 28 | 0) >> 2] | 0;
      i64toi32_i32$1 = HEAP32[(i64toi32_i32$2 + 8 | 0) >> 2] | 0;
      i64toi32_i32$0 = i64toi32_i32$1 >> 31 | 0;
-     $55_1 = i64toi32_i32$1;
-     $55$hi = i64toi32_i32$0;
-     i64toi32_i32$0 = $52$hi;
-     i64toi32_i32$1 = $55$hi;
-     i64toi32_i32$1 = __wasm_i64_udiv($52_1 | 0, i64toi32_i32$0 | 0, $55_1 | 0, i64toi32_i32$1 | 0) | 0;
+     $59_1 = i64toi32_i32$1;
+     $59$hi = i64toi32_i32$0;
+     i64toi32_i32$0 = $56$hi;
+     i64toi32_i32$1 = $59$hi;
+     i64toi32_i32$1 = __wasm_i64_udiv($56_1 | 0, i64toi32_i32$0 | 0, $59_1 | 0, i64toi32_i32$1 | 0) | 0;
      i64toi32_i32$0 = i64toi32_i32$HIGH_BITS;
-     HEAP32[($1_1 + 4 | 0) >> 2] = i64toi32_i32$1;
-     HEAP8[($1_1 + 3 | 0) >> 0] = 144;
-     FUNCTION_TABLE[HEAP32[(0 + 79840 | 0) >> 2] | 0 | 0](HEAP32[((HEAP32[($1_1 + 12 | 0) >> 2] | 0) + 14436 | 0) >> 2] | 0, HEAP32[($1_1 + 4 | 0) >> 2] | 0, (HEAPU8[($1_1 + 3 | 0) >> 0] | 0) & 255 | 0, (HEAPU8[((((HEAP32[($1_1 + 12 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 8 | 0) >> 2] | 0, 264) | 0) + 1 | 0) >> 0] | 0) & 255 | 0, 1 & 255 | 0, HEAPU8[((((HEAP32[($1_1 + 12 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 8 | 0) >> 2] | 0, 264) | 0) + 2 | 0) >> 0] | 0, HEAPU8[((((HEAP32[($1_1 + 12 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 8 | 0) >> 2] | 0, 264) | 0) + 3 | 0) >> 0] | 0, 0);
+     HEAP32[($1_1 + 16 | 0) >> 2] = i64toi32_i32$1;
+     HEAP8[($1_1 + 15 | 0) >> 0] = 144;
+     FUNCTION_TABLE[HEAP32[(0 + 79840 | 0) >> 2] | 0 | 0](HEAP32[($1_1 + 20 | 0) >> 2] | 0, HEAP32[($1_1 + 16 | 0) >> 2] | 0, (HEAPU8[($1_1 + 15 | 0) >> 0] | 0) & 255 | 0, (HEAPU8[((((HEAP32[($1_1 + 28 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 24 | 0) >> 2] | 0, 264) | 0) + 1 | 0) >> 0] | 0) & 255 | 0, 1 & 255 | 0, HEAPU8[((((HEAP32[($1_1 + 28 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 24 | 0) >> 2] | 0, 264) | 0) + 2 | 0) >> 0] | 0, HEAPU8[((((HEAP32[($1_1 + 28 | 0) >> 2] | 0) + 1724 | 0) + Math_imul(HEAP32[($1_1 + 24 | 0) >> 2] | 0, 264) | 0) + 3 | 0) >> 0] | 0, 0);
     }
-    HEAP32[($1_1 + 8 | 0) >> 2] = (HEAP32[($1_1 + 8 | 0) >> 2] | 0) + 1 | 0;
+    HEAP32[($1_1 + 24 | 0) >> 2] = (HEAP32[($1_1 + 24 | 0) >> 2] | 0) + 1 | 0;
     continue label;
    };
   }
-  global$0 = $1_1 + 16 | 0;
+  global$0 = $1_1 + 32 | 0;
   return;
  }
  
@@ -22977,6 +22978,7 @@ function asmFunc(imports) {
   "mid_song_set_transpose": $78, 
   "mid_song_set_channel_mute": $79, 
   "mid_song_resend_active_notes": $80, 
+  "mid_song_get_current_tick": $119, 
   "mid_song_set_track_mute": $81, 
   "mid_song_panic": $82, 
   "mid_song_get_master_peak": $83, 
@@ -22997,7 +22999,6 @@ function asmFunc(imports) {
   "mid_get_version": $115, 
   "mid_song_get_patch_names": $116, 
   "mid_song_get_required_patches": $118, 
-  "mid_song_get_current_tick": $119, 
   "mid_song_load_program": $120, 
   "mid_song_update_events": $121, 
   "mid_song_get_info_json": $122, 
@@ -27580,6 +27581,7 @@ var _mid_song_set_volume = Module['_mid_song_set_volume'] = makeInvalidEarlyAcce
 var _mid_song_set_transpose = Module['_mid_song_set_transpose'] = makeInvalidEarlyAccess('_mid_song_set_transpose');
 var _mid_song_set_channel_mute = Module['_mid_song_set_channel_mute'] = makeInvalidEarlyAccess('_mid_song_set_channel_mute');
 var _mid_song_resend_active_notes = Module['_mid_song_resend_active_notes'] = makeInvalidEarlyAccess('_mid_song_resend_active_notes');
+var _mid_song_get_current_tick = Module['_mid_song_get_current_tick'] = makeInvalidEarlyAccess('_mid_song_get_current_tick');
 var _mid_song_set_track_mute = Module['_mid_song_set_track_mute'] = makeInvalidEarlyAccess('_mid_song_set_track_mute');
 var _mid_song_panic = Module['_mid_song_panic'] = makeInvalidEarlyAccess('_mid_song_panic');
 var _mid_song_get_master_peak = Module['_mid_song_get_master_peak'] = makeInvalidEarlyAccess('_mid_song_get_master_peak');
@@ -27600,7 +27602,6 @@ var _mid_set_debug_msg_callback = Module['_mid_set_debug_msg_callback'] = makeIn
 var _mid_get_version = Module['_mid_get_version'] = makeInvalidEarlyAccess('_mid_get_version');
 var _mid_song_get_patch_names = Module['_mid_song_get_patch_names'] = makeInvalidEarlyAccess('_mid_song_get_patch_names');
 var _mid_song_get_required_patches = Module['_mid_song_get_required_patches'] = makeInvalidEarlyAccess('_mid_song_get_required_patches');
-var _mid_song_get_current_tick = Module['_mid_song_get_current_tick'] = makeInvalidEarlyAccess('_mid_song_get_current_tick');
 var _mid_song_load_program = Module['_mid_song_load_program'] = makeInvalidEarlyAccess('_mid_song_load_program');
 var _mid_song_update_events = Module['_mid_song_update_events'] = makeInvalidEarlyAccess('_mid_song_update_events');
 var _mid_song_get_info_json = Module['_mid_song_get_info_json'] = makeInvalidEarlyAccess('_mid_song_get_info_json');
@@ -27641,6 +27642,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['mid_song_set_transpose'] != 'undefined', 'missing Wasm export: mid_song_set_transpose');
   assert(typeof wasmExports['mid_song_set_channel_mute'] != 'undefined', 'missing Wasm export: mid_song_set_channel_mute');
   assert(typeof wasmExports['mid_song_resend_active_notes'] != 'undefined', 'missing Wasm export: mid_song_resend_active_notes');
+  assert(typeof wasmExports['mid_song_get_current_tick'] != 'undefined', 'missing Wasm export: mid_song_get_current_tick');
   assert(typeof wasmExports['mid_song_set_track_mute'] != 'undefined', 'missing Wasm export: mid_song_set_track_mute');
   assert(typeof wasmExports['mid_song_panic'] != 'undefined', 'missing Wasm export: mid_song_panic');
   assert(typeof wasmExports['mid_song_get_master_peak'] != 'undefined', 'missing Wasm export: mid_song_get_master_peak');
@@ -27661,7 +27663,6 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['mid_get_version'] != 'undefined', 'missing Wasm export: mid_get_version');
   assert(typeof wasmExports['mid_song_get_patch_names'] != 'undefined', 'missing Wasm export: mid_song_get_patch_names');
   assert(typeof wasmExports['mid_song_get_required_patches'] != 'undefined', 'missing Wasm export: mid_song_get_required_patches');
-  assert(typeof wasmExports['mid_song_get_current_tick'] != 'undefined', 'missing Wasm export: mid_song_get_current_tick');
   assert(typeof wasmExports['mid_song_load_program'] != 'undefined', 'missing Wasm export: mid_song_load_program');
   assert(typeof wasmExports['mid_song_update_events'] != 'undefined', 'missing Wasm export: mid_song_update_events');
   assert(typeof wasmExports['mid_song_get_info_json'] != 'undefined', 'missing Wasm export: mid_song_get_info_json');
@@ -27698,6 +27699,7 @@ function assignWasmExports(wasmExports) {
   _mid_song_set_transpose = Module['_mid_song_set_transpose'] = createExportWrapper('mid_song_set_transpose', wasmExports['mid_song_set_transpose'], 2);
   _mid_song_set_channel_mute = Module['_mid_song_set_channel_mute'] = createExportWrapper('mid_song_set_channel_mute', wasmExports['mid_song_set_channel_mute'], 3);
   _mid_song_resend_active_notes = Module['_mid_song_resend_active_notes'] = createExportWrapper('mid_song_resend_active_notes', wasmExports['mid_song_resend_active_notes'], 1);
+  _mid_song_get_current_tick = Module['_mid_song_get_current_tick'] = createExportWrapper('mid_song_get_current_tick', wasmExports['mid_song_get_current_tick'], 1);
   _mid_song_set_track_mute = Module['_mid_song_set_track_mute'] = createExportWrapper('mid_song_set_track_mute', wasmExports['mid_song_set_track_mute'], 3);
   _mid_song_panic = Module['_mid_song_panic'] = createExportWrapper('mid_song_panic', wasmExports['mid_song_panic'], 1);
   _mid_song_get_master_peak = Module['_mid_song_get_master_peak'] = createExportWrapper('mid_song_get_master_peak', wasmExports['mid_song_get_master_peak'], 3);
@@ -27718,7 +27720,6 @@ function assignWasmExports(wasmExports) {
   _mid_get_version = Module['_mid_get_version'] = createExportWrapper('mid_get_version', wasmExports['mid_get_version'], 0);
   _mid_song_get_patch_names = Module['_mid_song_get_patch_names'] = createExportWrapper('mid_song_get_patch_names', wasmExports['mid_song_get_patch_names'], 1);
   _mid_song_get_required_patches = Module['_mid_song_get_required_patches'] = createExportWrapper('mid_song_get_required_patches', wasmExports['mid_song_get_required_patches'], 1);
-  _mid_song_get_current_tick = Module['_mid_song_get_current_tick'] = createExportWrapper('mid_song_get_current_tick', wasmExports['mid_song_get_current_tick'], 1);
   _mid_song_load_program = Module['_mid_song_load_program'] = createExportWrapper('mid_song_load_program', wasmExports['mid_song_load_program'], 4);
   _mid_song_update_events = Module['_mid_song_update_events'] = createExportWrapper('mid_song_update_events', wasmExports['mid_song_update_events'], 2);
   _mid_song_get_info_json = Module['_mid_song_get_info_json'] = createExportWrapper('mid_song_get_info_json', wasmExports['mid_song_get_info_json'], 1);

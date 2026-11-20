@@ -224,7 +224,7 @@ class TimidityPlayer {
      * - 'onNoteOff' when a Note Off event occurs, or a Note On with velocity = 0
      * - 'onMidiEvent' for all MIDI events with full details
      *
-     * @param {number} tick - MIDI tick position of the event.
+     * @param {number} callbackPosition - Sample position supplied by the current C build.
      * @param {number} timeMilisecond - Event time in milliseconds.
      * @param {number} eventStatus - Raw MIDI status byte.
      * @param {number} channel - MIDI channel number.
@@ -233,7 +233,11 @@ class TimidityPlayer {
      * @param {number} b - Second event parameter (e.g., velocity).
      * @param {number} textPtr - Pointer to optional UTF-8 text data.
      */
-    _handleMidiEvent(tick, timeMilisecond, eventStatus, channel, eventType, a, b, textPtr) {
+    _handleMidiEvent(callbackPosition, timeMilisecond, eventStatus, channel, eventType, a, b, textPtr) {
+        // The current C build passes sample position here, so read the actual MIDI tick from the song.
+        const tick = this.songPtr !== 0
+            ? this.c.getCurrentTick(this.songPtr)
+            : callbackPosition;
         const timeSecond = timeMilisecond / 1000.0; // Convert milliseconds to seconds
         let text = '';
         if (textPtr) {

@@ -816,7 +816,7 @@ size_t mid_song_read_wave(MidSong *song, sint8 *ptr, size_t size, int skip_callb
             text = (const char*) song->current_event->a;
           }
 
-          global_event_callback(song->current_event->time, current_ms,
+          global_event_callback(song->current_event->tick, current_ms,
                         callback_midi_status, midi_channel, song->current_event->type,
                         song->current_event->a, song->current_event->b,
                         text);
@@ -1206,8 +1206,10 @@ void mid_send_event(MidSong *song, int type, int channel, int a, int b)
 void mid_song_resend_active_notes(MidSong *song)
 {
   int i;
+  uint32 current_tick;
   if (!song || !global_event_callback) return;
 
+  current_tick = mid_song_get_current_tick(song);
   for (i = 0; i < song->voices; i++)
   {
     if (song->voice[i].status == VOICE_ON)
@@ -1215,7 +1217,7 @@ void mid_song_resend_active_notes(MidSong *song)
       uint32 current_ms = (uint32)(((uint64)song->current_sample * 1000) / song->rate);
       uint8 midi_status_byte = 0x90; // Status for Note On, channel is separate
 
-      global_event_callback(song->current_sample, current_ms,
+      global_event_callback(current_tick, current_ms,
                             midi_status_byte, song->voice[i].channel, ME_NOTEON,
                             song->voice[i].note, song->voice[i].velocity, NULL);
     }
