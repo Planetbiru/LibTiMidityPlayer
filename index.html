@@ -2365,7 +2365,7 @@
 
             player.on('onMidiEvent', (event) => {
                 if (event.eventType === player.ME_PROGRAM && event.channel !== 9) {
-                    updatePianoChannelIcon(event.channel, player.getProgram(event.channel, event.tick));
+                    updatePianoChannelIcon(event.channel, event.a);
                 }
                 if (event.eventType === player.ME_ALL_NOTES_OFF || event.eventType === player.ME_ALL_SOUNDS_OFF) {
                     activeChannelNotes[event.channel].clear();
