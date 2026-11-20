@@ -6,6 +6,18 @@ This is a WebAssembly port of the `libTiMidity` MIDI synthesizer engine, equippe
 
 Explore the player in your browser: [LibTiMidityPlayer Live Demo](https://planetbiru.github.io/LibTiMidityPlayer/).
 
+## Requirements
+
+The bundled Emscripten runtime checks these minimum versions:
+
+- **Node.js:** 18.3.0 or later. This check is skipped when running under Bun or Deno.
+- **Safari:** 15.0 or later.
+- **Firefox:** 79 or later.
+- **Chrome:** 85 or later.
+- **Microsoft Edge (Chromium):** 85 or later.
+
+These are the browser and Node.js version checks performed by `libtimidity.js`.
+
 This project provides JavaScript bindings for libTiMidity. The bindings are licensed under MIT. The original C core remains under LGPL/Artistic.
 
 Modified C source code is included in src/c-core/modified and distributed under MIT, while original libTiMidity code remains under LGPL/Artistic
