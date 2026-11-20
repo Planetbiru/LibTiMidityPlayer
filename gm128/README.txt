@@ -8,7 +8,7 @@ Package contents:
   timidity.cfg   TiMidity++ configuration
   README.txt     This file
   melodic/       128 GM program patches (000–127)
-  drums/         57 drum kit patches (notes 25–84)
+  drums/         63 drum kit patches (notes 25–87)
 
 ─── Usage with TiMidity++ ─────────────────
   1. Extract the entire ZIP into one folder.
