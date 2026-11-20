@@ -261,9 +261,10 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
             position: absolute;
-            inset: 0;
-            transform-origin: right center;
-            transform: scaleX(1);
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: auto;
         }
 
         .pitch-bend-track {
@@ -416,9 +417,9 @@
             position: absolute;
             right: 0;
             top: 0;
+            bottom: 0;
+            left: auto;
             border-radius: 0;
-            transform-origin: right;
-            transform: scaleX(1);
         }
 
         #playPause{
@@ -2112,12 +2113,12 @@
                 // Left Channel
                 let widthL = player._vuL;
                 if (widthL > 100) widthL = 100;
-                document.getElementById('masterVuL').style.transform = `scaleX(${1 - (widthL / 100)})`;
+                document.getElementById('masterVuL').style.width = `${100 - widthL}%`;
 
                 // Right Channel
                 let widthR = player._vuR;
                 if (widthR > 100) widthR = 100;
-                document.getElementById('masterVuR').style.transform = `scaleX(${1 - (widthR / 100)})`;
+                document.getElementById('masterVuR').style.width = `${100 - widthR}%`;
 
                 // --- Channel VU Meter Animation ---
                 if (typeof player._chVuLTarget === 'undefined') {
@@ -2131,14 +2132,14 @@
 
                 for (let i = 0; i < 16; i++) {
                     if (vuLeftControls[i] && vuRightControls[i]) {
-                        const tL = smoothVuLevel(player._chVuLDisplay[i], player._chVuLTarget[i]);
-                        const tR = smoothVuLevel(player._chVuRDisplay[i], player._chVuRTarget[i]);
+                        const tL = Math.max(0, Math.min(1, smoothVuLevel(player._chVuLDisplay[i], player._chVuLTarget[i])));
+                        const tR = Math.max(0, Math.min(1, smoothVuLevel(player._chVuRDisplay[i], player._chVuRTarget[i])));
 
                         player._chVuLDisplay[i] = tL;
                         player._chVuRDisplay[i] = tR;
 
-                        vuLeftControls[i].style.transform = `scaleX(${tL})`;
-                        vuRightControls[i].style.transform = `scaleX(${tR})`;
+                        vuLeftControls[i].style.width = `${tL * 100}%`;
+                        vuRightControls[i].style.width = `${tR * 100}%`;
                     }
                 }
             }
@@ -2149,8 +2150,8 @@
             function resetMasterVu() {
                 player._vuL = 0;
                 player._vuR = 0;
-                document.getElementById('masterVuL').style.transform = 'scaleX(1)';
-                document.getElementById('masterVuR').style.transform = 'scaleX(1)';
+                document.getElementById('masterVuL').style.width = '100%';
+                document.getElementById('masterVuR').style.width = '100%';
                 document.getElementById('polyphonyCounter').textContent = '0';
             }
 
