@@ -150,7 +150,7 @@
         .key {
             border: 1px solid #111;
             box-sizing: border-box;
-            border-radius: 0 0 4px 4px;
+            border-radius: 0 0 2px 2px;
             cursor: default;
         }
 
@@ -216,48 +216,54 @@
 
         .vu-meter-container {
             display: flex;
+            flex-direction: column;
             gap: 4px;
-            height: 100px;
-            width: 20px;
-            margin-bottom: 15px;
-            border: 1px solid #000;
-            /* The gradient is now the static background of the container */
-            background: linear-gradient(to top, #0f0 50%, #ff0 85%, #f00 100%);
-            padding: 2px;
+            height: auto;
+            width: 100%;
+            margin-bottom: 8px;
+            border: 1px solid #253747;
+            border-radius: 0;
+            background: #0b141e;
+            padding: 7px;
             position: relative;
-            /* Needed for the overlay bar */
             overflow: hidden;
-            /* Hide the part of the bar that is "off" */
+            box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .vu-meter-track {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            height: 8px;
+        }
+
+        .vu-meter-label {
+            width: 9px;
+            color: #8b9bad;
+            font-size: 0.56rem;
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+        }
+
+        .vu-meter-scale {
+            position: relative;
+            flex: 1;
+            height: 7px;
+            overflow: hidden;
+            border-radius: 0;
+            background: linear-gradient(to right, #45d69a 0%, #a9d85d 58%, #f2c94c 78%, #ef6a62 100%);
+            box-shadow: none;
         }
 
         .vu-bar {
-            width: 50%;
+            width: 100%;
             height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
-            /* Dark overlay to hide the gradient */
             position: absolute;
-            bottom: 0;
-            transform-origin: top;
-            /* The bar will "shrink" from the top down */
-            transform: scaleY(1);
-            /* Start fully scaled (volume at 0) */
-            /* Transition removed to let JS requestAnimationFrame render smooth jitter */
-        }
-
-        .bar-left {
-            margin-right: 1px;
-        }
-
-        .bar-right {
-            margin-left: 1px;
-        }
-
-        .fader-track {
-            height: 120px;
-            display: flex;
-            align-items: center;
-            position: relative;
-            margin-bottom: 15px;
+            inset: 0;
+            transform-origin: right center;
+            transform: scaleX(1);
         }
 
         .pitch-bend-track {
@@ -266,21 +272,6 @@
             flex-direction: column;
             align-items: center;
             width: 100%;
-        }
-
-        input[type=range].fader {
-            writing-mode: bt-lr;
-            /* IE */
-            -webkit-appearance: slider-vertical;
-            /* WebKit */
-            appearance: slider-vertical;
-            /* Modern */
-            width: 24px;
-            height: 120px;
-            background: #111;
-            border-radius: 4px;
-            outline: none;
-            box-shadow: inset 0 0 5px #000;
         }
 
         .mute-btn {
@@ -408,23 +399,24 @@
         }
 
         .master-vu-container {
-            width: 200px;
-            height: 10px;
-            background: linear-gradient(to right, #0f0 50%, #ff0 85%, #f00 100%);
-            border: 1px solid #000;
-            border-radius: 2px;
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(to right, #45d69a 0%, #a9d85d 58%, #f2c94c 78%, #ef6a62 100%);
+            border: 0;
+            border-radius: 0;
             position: relative;
             overflow: hidden;
-            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+            box-shadow: none;
         }
 
         .master-vu-bar {
             height: 100%;
             width: 100%;
-            background-color: #222;
+            background-color: rgba(0, 0, 0, 0.7);
             position: absolute;
             right: 0;
             top: 0;
+            border-radius: 0;
             transform-origin: right;
             transform: scaleX(1);
         }
@@ -454,14 +446,148 @@
             width: min(100%, 1600px);
             min-height: 100vh;
             margin: 0 auto;
-            padding: clamp(16px, 3vw, 40px);
-            gap: 18px;
+            padding: clamp(10px, 2vw, 24px);
+            gap: 10px;
             background:
                 radial-gradient(ellipse at 12% 0%, rgba(56, 111, 130, 0.16), transparent 34rem),
                 var(--bg-color);
             color: var(--text-color);
             font-family: Inter, "Segoe UI", Tahoma, sans-serif;
             line-height: 1.5;
+        }
+
+        .app-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+            gap: 10px;
+        }
+
+        .app-grid > .panel {
+            height: 100%;
+        }
+
+        .transport-main {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .transport-main #midiFile {
+            max-width: 330px;
+        }
+
+        .transport-actions {
+            display: flex;
+            flex: 1 1 280px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .transport-toolbar {
+            display: grid;
+            grid-template-columns: minmax(180px, auto) minmax(260px, 1fr) auto;
+            align-items: center;
+            gap: 14px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(139, 155, 173, 0.14);
+        }
+
+        .transpose-control,
+        .time-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .transpose-control {
+            margin-top: 0 !important;
+        }
+
+        .time-controls {
+            justify-content: flex-end;
+        }
+
+        .mixer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 10px;
+        }
+
+        .mixer-heading {
+            display: flex;
+            min-width: 0;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 18px;
+        }
+
+        .mixer-header h3 {
+            margin: 0;
+        }
+
+        .mixer-sync {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #b9c5d0;
+            font-size: 0.86rem;
+            white-space: nowrap;
+        }
+
+        .master-output {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(150px, 190px);
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+            padding: 9px 12px;
+            border: 1px solid #2b3c4d;
+            border-radius: 9px;
+            background: linear-gradient(145deg, #1a2836, #121c27);
+        }
+
+        .master-output-copy {
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .master-output-copy strong {
+            color: #e6edf5;
+            font-size: 0.9rem;
+            line-height: 1.25;
+        }
+
+        .master-output-copy span {
+            color: #8b9bad;
+            font-size: 0.72rem;
+        }
+
+        .master-output-meters {
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .master-meter-row {
+            display: grid;
+            grid-template-columns: 10px minmax(0, 1fr);
+            align-items: end;
+            gap: 6px;
+        }
+
+        .master-meter-label {
+            color: #8b9bad;
+            font-size: 0.62rem;
+            font-weight: 700;
+            line-height: 8px;
+            text-align: center;
         }
 
         h1,
@@ -477,13 +603,13 @@
         }
 
         h3 {
-            margin: 0 0 18px;
+            margin: 0 0 10px;
             font-size: 1.05rem;
         }
 
         .panel {
             min-width: 0;
-            padding: clamp(18px, 2.4vw, 28px);
+            padding: clamp(12px, 1.5vw, 18px);
             background: linear-gradient(145deg, rgba(20, 31, 44, 0.98), rgba(15, 23, 33, 0.98));
             border: 1px solid var(--border-color);
             border-radius: 16px;
@@ -491,7 +617,7 @@
         }
 
         body > .panel:first-child {
-            padding: clamp(20px, 3vw, 34px);
+            padding: clamp(12px, 1.8vw, 20px);
             border-color: #2b4654;
             background:
                 radial-gradient(ellipse at 100% 0%, rgba(85, 230, 193, 0.09), transparent 28rem),
@@ -508,8 +634,8 @@
         }
 
         .transport > h1::after {
-            display: block;
-            margin-top: 5px;
+            display: none;
+            margin-top: 3px;
             color: var(--muted-color);
             content: "MIDI PLAYBACK & MIXING WORKSTATION";
             font-size: 0.64rem;
@@ -521,7 +647,8 @@
             display: inline-flex;
             align-items: center;
             gap: 7px;
-            margin: 0 0 5px auto;
+            flex: 0 0 auto;
+            margin: 0;
             color: var(--accent-color);
             font-size: 0.86rem;
             font-weight: 600;
@@ -542,8 +669,8 @@
 
         button,
         input[type=file]::file-selector-button {
-            min-height: 38px;
-            padding: 8px 14px;
+            min-height: 34px;
+            padding: 6px 12px;
             border: 1px solid #34495c;
             border-radius: 9px;
             background: #202e3d;
@@ -644,8 +771,61 @@
         }
 
         input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 18px;
+            background: transparent;
             accent-color: var(--accent-color);
             cursor: pointer;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            height: 4px;
+            border-radius: 999px;
+            background: #34495c;
+        }
+
+        input[type=range]::-moz-range-track {
+            height: 4px;
+            border-radius: 999px;
+            background: #34495c;
+        }
+
+        input[type=range]::-ms-track {
+            height: 4px;
+            border: 0;
+            border-radius: 999px;
+            background: #34495c;
+            color: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            margin-top: -6px;
+            border: 2px solid #d5fff3;
+            border-radius: 50%;
+            background: var(--accent-color);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+        }
+
+        input[type=range]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border: 2px solid #d5fff3;
+            border-radius: 50%;
+            background: var(--accent-color);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+        }
+
+        input[type=range]::-ms-thumb {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d5fff3;
+            border-radius: 50%;
+            background: var(--accent-color);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
         }
 
         .seeker-container {
@@ -661,13 +841,14 @@
         #seeker::-webkit-slider-thumb {
             width: 15px;
             height: 15px;
+            margin-top: -5px;
             box-shadow: 0 0 0 4px rgba(85, 230, 193, 0.15);
         }
 
         #seeker::-moz-range-thumb {
             width: 15px;
             height: 15px;
-            border: 0;
+            border: 2px solid #d5fff3;
             border-radius: 50%;
             background: var(--accent-color);
             box-shadow: 0 0 0 4px rgba(85, 230, 193, 0.15);
@@ -683,8 +864,8 @@
 
         #status,
         #midiStatus {
-            margin-top: 18px !important;
-            padding: 10px 13px;
+            margin-top: 8px !important;
+            padding: 6px 10px;
             border: 1px solid #253747;
             border-radius: 9px;
             background: rgba(8, 14, 21, 0.5);
@@ -693,8 +874,21 @@
             font-style: normal;
         }
 
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .status-bar #status {
+            flex: 1 1 auto;
+            min-width: 0;
+            margin-top: 0 !important;
+        }
+
         #subtitleBox {
-            min-height: 82px;
+            min-height: 48px;
             border-color: #2b4654;
             background: linear-gradient(110deg, rgba(34, 64, 77, 0.55), rgba(18, 27, 38, 0.9));
             color: #f1f7fa;
@@ -705,7 +899,7 @@
 
         .piano-header {
             gap: 16px;
-            margin-bottom: 18px;
+            margin-bottom: 10px;
         }
 
         .piano-header h3 {
@@ -724,31 +918,94 @@
         }
 
         .piano-container {
-            min-height: 146px;
-            padding: 3px 3px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 5px;
             border-radius: 8px;
             background: #0c131c;
+            overflow-x: auto;
+            overflow-y: hidden;
             scrollbar-color: #40576b #15202c;
         }
 
+        .piano-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: max-content;
+            height: 38px;
+        }
+
+        .piano-channel-label {
+            display: flex;
+            width: 72px;
+            flex: 0 0 72px;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 5px;
+            color: #9aabba;
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .piano-channel-icon {
+            display: grid;
+            width: 20px;
+            height: 20px;
+            flex: 0 0 20px;
+            place-items: center;
+            color: var(--accent-color);
+        }
+
+        .piano-channel-icon svg {
+            display: block;
+            width: 20px;
+            height: 20px;
+        }
+
+        .piano-keys {
+            display: flex;
+            position: relative;
+            height: 38px;
+        }
+
+        .piano-keys .key.white {
+            width: 16px;
+            height: 38px;
+            border-color: #c5d0d5;
+            background: linear-gradient(180deg, #f8fafb 0%, #d7e0e5 100%);
+        }
+
+        .piano-keys .key.black {
+            width: 10px;
+            height: 24px;
+            margin-left: -5px;
+            margin-right: -5px;
+            border-color: #0b1017;
+            background: linear-gradient(180deg, #40515f, #111923 80%);
+        }
+
         .key.white {
+            height: 112px;
             border-color: #c5d0d5;
             background: linear-gradient(180deg, #f8fafb 0%, #d7e0e5 100%);
         }
 
         .key.black {
+            height: 72px;
             border-color: #0b1017;
             background: linear-gradient(180deg, #40515f, #111923 80%);
         }
 
         .key.active.white {
-            background: linear-gradient(180deg, #a9f3dd, #55e6c1);
-            box-shadow: 0 0 16px rgba(85, 230, 193, 0.55);
+            background: linear-gradient(180deg, #ffc857, #e68600);
+            box-shadow: 0 0 14px rgba(230, 134, 0, 0.7);
         }
 
         .key.active.black {
-            background: linear-gradient(180deg, #2cbb96, #16745f);
-            box-shadow: 0 0 14px rgba(85, 230, 193, 0.5);
+            background: linear-gradient(180deg, #e6a14a, #b96816);
+            box-shadow: 0 0 10px rgba(230, 161, 74, 0.55);
         }
 
         .drum-pad-header {
@@ -756,7 +1013,7 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: 16px;
-            margin-bottom: 18px;
+            margin-bottom: 10px;
         }
 
         .drum-pad-header h3 {
@@ -787,7 +1044,7 @@
 
         .drum-pad {
             display: flex;
-            min-height: 62px;
+            min-height: 52px;
             align-items: center;
             justify-content: flex-start;
             gap: 10px;
@@ -853,14 +1110,18 @@
         }
 
         .mixer-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 10px;
             padding: 5px 2px 12px;
+            overflow: visible;
             scrollbar-color: #40576b #15202c;
         }
 
         .mixer-channel {
-            width: 68px;
-            padding: 6px 5px;
+            width: auto;
+            min-width: 0;
+            padding: 8px;
             border-color: #2b3c4d;
             border-radius: 11px;
             background: linear-gradient(180deg, #1a2836, #121c27);
@@ -879,27 +1140,43 @@
         }
 
         .vu-meter-container {
-            width: 18px;
-            height: 68px;
+            width: 100%;
+            height: auto;
             margin-bottom: 8px;
-            gap: 2px;
-            border-color: #0a1119;
-            border-radius: 3px;
+            gap: 4px;
+            border-color: #253747;
+            border-radius: 0;
+            background: #0b141e;
+            padding: 7px;
+        }
+
+        .vu-meter-track {
+            height: 8px;
+        }
+
+        .vu-meter-scale {
+            height: 7px;
         }
 
         .knob-track {
-            margin-bottom: 7px;
+            display: grid;
+            grid-template-columns: 38px minmax(0, 1fr);
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            margin-bottom: 6px;
         }
 
         .knob-label {
-            margin-bottom: 3px;
+            margin: 0;
             font-size: 0.62rem;
             letter-spacing: 0.05em;
         }
 
         input[type=range].knob {
-            width: 42px;
-            height: 12px;
+            width: 100%;
+            min-width: 0;
+            height: 18px;
         }
 
         .pitch-bend-track {
@@ -910,14 +1187,17 @@
             width: 48px;
         }
 
-        .fader-track {
-            height: 84px;
-            margin-bottom: 8px;
+        .mixer-channel-actions {
+            display: flex;
+            gap: 6px;
+            width: 100%;
         }
 
-        input[type=range].fader {
-            width: 20px;
-            height: 84px;
+        .mixer-channel-actions .mute-btn,
+        .mixer-channel-actions .solo-btn {
+            width: auto;
+            flex: 1;
+            margin-bottom: 4px;
         }
 
         .mute-btn,
@@ -955,12 +1235,11 @@
         }
 
         .master-vu-container {
-            border-color: #0a1119;
-            border-radius: 4px;
+            border-radius: 0;
         }
 
         .master-vu-bar {
-            background-color: #182432;
+            background-color: rgba(0, 0, 0, 0.7);
         }
 
         .modal {
@@ -1047,6 +1326,41 @@
                 padding: 14px;
             }
 
+            .app-grid {
+                grid-template-columns: 1fr;
+                gap: 13px;
+            }
+
+            .transport-main {
+                align-items: stretch;
+            }
+
+            .transport-actions {
+                flex-basis: 100%;
+            }
+
+            .transport-toolbar {
+                grid-template-columns: 1fr;
+            }
+
+            .transport-main #midiFile {
+                max-width: none;
+            }
+
+            .time-controls {
+                justify-content: flex-start;
+            }
+
+            .mixer-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .master-output {
+                width: 100%;
+                max-width: 100%;
+            }
+
             .panel {
                 border-radius: 13px;
             }
@@ -1059,10 +1373,6 @@
             .panel > div[style*="justify-content: space-between"] > div {
                 width: 100%;
                 justify-content: space-between;
-            }
-
-            .master-vu-container {
-                width: min(38vw, 200px);
             }
 
             .transport[style*="gap: 20px"] {
@@ -1128,6 +1438,15 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
+            .mixer-container {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .master-output {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
             .modal-content {
                 padding: 21px;
             }
@@ -1147,87 +1466,98 @@
 <body>
     <div class="panel">
         <div class="transport">
-            <h1>libTiMidity DAW</h1>
-            <a class="patch-editor-link" href="https://composer.planetbiru.com/instrument-creator/" target="_blank" rel="noopener noreferrer">
-                Create Your Own <span aria-hidden="true">↗</span>
-            </a>
-            <input type="file" id="midiFile" accept=".mid,.midi">
-            <button id="playPause" disabled>Play</button>
-            <button id="stop" disabled>Stop</button>
-            <button id="renderWav" disabled>Render WAV</button>
-            <button id="exportStemsBtn" disabled>Export Stems</button>
-            <button id="songInfoBtn" disabled>Song Info</button>
-            <button id="panic" style="background-color:#e74c3c; color:white;">Panic</button>
-
-            <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
-                <label for="transpose">Transpose:</label>
-                <input type="range" id="transpose" min="-12" max="12" value="0" style="width: 100px;">
-                <span id="transposeValue">0</span>
-            </div>
-            <div style="margin-top: 10px;" class="seeker-container">
-                <span class="time-display" id="currentTime">00:00.000</span>
-                <input type="range" id="seeker" min="0" value="0" disabled>
-                <span class="time-display" id="totalTime">00:00.000</span>
-            </div>
-            <div style="margin-top: 10px; display: flex; align-items: center; justify-content: flex-end; gap: 20px;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <label style="font-size: 0.9em; color:#aaa;">Tick:</label>
-                    <span id="tickCounter"
-                        style="font-family: monospace; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em;">0</span>
+            <div class="transport-main" style="width: 100%;">
+                <input type="file" id="midiFile" accept=".mid,.midi">
+                <div class="transport-actions">
+                    <button id="playPause" disabled>Play</button>
+                    <button id="stop" disabled>Stop</button>
+                    <button id="renderWav" disabled>Render WAV</button>
+                    <button id="exportStemsBtn" disabled>Export Stems</button>
+                    <button id="songInfoBtn" disabled>Song Info</button>
+                    <button id="panic" style="background-color:#e74c3c; color:white;">Panic</button>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <label style="font-size: 0.9em; color:#aaa;">Polyphony:</label>
-                    <span id="polyphonyCounter"
-                        style="font-family: monospace; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em;">0</span>
+            </div>
+            <div class="transport-toolbar">
+                <div class="seeker-container">
+                    <span class="time-display" id="currentTime">00:00.000</span>
+                    <input type="range" id="seeker" min="0" value="0" disabled>
+                    <span class="time-display" id="totalTime">00:00.000</span>
+                </div>
+                <div class="transpose-control">
+                    <label for="transpose">Transpose:</label>
+                    <input type="range" id="transpose" min="-12" max="12" value="0" style="width: 100px;">
+                    <span id="transposeValue">0</span>
+                </div>
+                <div class="time-controls">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label style="font-size: 0.9em; color:#aaa;">Tick:</label>
+                        <span id="tickCounter"
+                            style="font-family: monospace; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em;">0</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label style="font-size: 0.9em; color:#aaa;">Polyphony:</label>
+                        <span id="polyphonyCounter"
+                            style="font-family: monospace; background: #333; padding: 2px 6px; border-radius: 4px; font-size: 0.9em;">0</span>
+                    </div>
                 </div>
             </div>
             <progress id="renderProgress" value="0" max="100"
                 style="display: none; width: 100%; height: 8px; margin-top: 10px;"></progress>
         </div>
-        <div style="margin-top: 10px;" id="status">Waiting for initialization...</div>
+        <div class="status-bar">
+            <div id="status">Waiting for initialization...</div>
+            <a class="patch-editor-link" href="https://composer.planetbiru.com/instrument-creator/" target="_blank" rel="noopener noreferrer">
+                Create Your Own <span aria-hidden="true">↗</span>
+            </a>
+        </div>
     </div>
 
     <div class="panel" id="subtitleBox"></div>
 
-    <div class="panel">
-        <div class="piano-header">
-            <h3>Piano Roll</h3>
-            <label>Monitor Track:
-                <select id="pianoChannel"></select>
-            </label>
-        </div>
-        <div id="piano" class="piano-container"></div>
-    </div>
-
-    <div class="panel">
-        <div class="drum-pad-header">
-            <div>
-                <h3>Drum Pad</h3>
-                <div class="drum-pad-caption">Tap a pad to play a percussion sound.</div>
+    <div class="app-grid">
+        <div class="panel">
+            <div class="piano-header">
+                <h3>Piano Roll</h3>
             </div>
-            <span class="drum-channel-badge">MIDI Channel 10 · Index 9</span>
+            <div id="piano" class="piano-container"></div>
         </div>
-        <div class="drum-pad-grid" id="drumPadGrid"></div>
+        <div class="panel">
+            <div class="drum-pad-header">
+                <div>
+                    <h3>Drum Pad</h3>
+                    <div class="drum-pad-caption">Tap a pad to play a percussion sound.</div>
+                </div>
+                <span class="drum-channel-badge">MIDI Channel 10 · Index 9</span>
+            </div>
+            <div class="drum-pad-grid" id="drumPadGrid"></div>
+        </div>
     </div>
 
     <div class="panel">
-        <h3>Mixing Console</h3>
-        <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end;">
-            <label>
-                <input type="checkbox" id="mixerSyncToggle" checked> Sync with MIDI Events
-            </label>
-            <div
-                style="display: flex; align-items: center; gap: 15px; background: #222; padding: 10px 15px; border-radius: 6px; border: 1px solid #333;">
-                <div style="text-align: right;">
-                    <strong style="display: block; font-size: 1.1em; color: #fff;">Audio Output Level</strong>
-                    <span style="font-size: 0.8em; color: #888;">Master Volume (L/R)</span>
+        <div class="mixer-header">
+            <div class="mixer-heading">
+                <h3>Mixing Console</h3>
+                <label class="mixer-sync">
+                    <input type="checkbox" id="mixerSyncToggle" checked> Sync with MIDI Events
+                </label>
+            </div>
+            <div class="master-output">
+                <div class="master-output-copy">
+                    <strong>Audio Output Level</strong>
+                    <span>Master Volume</span>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <div class="master-vu-container">
-                        <div class="master-vu-bar" id="masterVuL"></div>
+                <div class="master-output-meters">
+                    <div class="master-meter-row">
+                        <span class="master-meter-label">L</span>
+                        <div class="master-vu-container">
+                            <div class="master-vu-bar" id="masterVuL"></div>
+                        </div>
                     </div>
-                    <div class="master-vu-container">
-                        <div class="master-vu-bar" id="masterVuR"></div>
+                    <div class="master-meter-row">
+                        <span class="master-meter-label">R</span>
+                        <div class="master-vu-container">
+                            <div class="master-vu-bar" id="masterVuR"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1337,7 +1667,18 @@
         let pbControls = {};
         let vuLeftControls = {};
         let vuRightControls = {};
-        let channelVelocity = {};
+        const activeChannelNotes = Array.from({ length: 16 }, () => new Map());
+        let channelVelocity = new Array(16).fill(0);
+
+        function updateChannelVelocity(channel) {
+            let peakVelocity = 0;
+            for (const velocities of activeChannelNotes[channel].values()) {
+                for (const velocity of velocities) {
+                    if (velocity > peakVelocity) peakVelocity = velocity;
+                }
+            }
+            channelVelocity[channel] = peakVelocity;
+        }
 
         let player;
         const drumPads = [
@@ -1596,7 +1937,6 @@
                 }
             };
             const midiFileEl = document.getElementById("midiFile");
-            const pianoChannelSelect = document.getElementById('pianoChannel');
             const noteOnBtn = document.getElementById("noteOn");
             const noteOffBtn = document.getElementById("noteOff");
             const connectMidiBtn = document.getElementById('connectMidi');
@@ -1665,6 +2005,11 @@
                         if (strip) strip.hidden = !channelsUsed.includes(channel);
                     }
                 }
+                for (let channel = 0; channel < 16; channel++) {
+                    if (channel !== 9) {
+                        updatePianoChannelIcon(channel, player.getProgram(channel, 0));
+                    }
+                }
                 playPauseBtn.textContent = 'Play'; // Reset button text
                 playPauseBtn.disabled = false;
                 stopBtn.disabled = false;
@@ -1722,6 +2067,12 @@
             });
 
             let vuRenderId = null;
+            function smoothVuLevel(current, target) {
+                const smoothing = target < current ? 0.35 : 0.12;
+                const next = current + (target - current) * smoothing;
+                return Math.abs(target - next) < 0.001 ? target : next;
+            }
+
             function renderMeters() {
                 vuRenderId = requestAnimationFrame(renderMeters);
 
@@ -1773,21 +2124,21 @@
                     player._chVuLTarget = new Array(16).fill(1.0);
                     player._chVuRTarget = new Array(16).fill(1.0);
                 }
+                if (typeof player._chVuLDisplay === 'undefined') {
+                    player._chVuLDisplay = new Array(16).fill(1.0);
+                    player._chVuRDisplay = new Array(16).fill(1.0);
+                }
 
                 for (let i = 0; i < 16; i++) {
                     if (vuLeftControls[i] && vuRightControls[i]) {
-                        let tL = player._chVuLTarget[i];
-                        let tR = player._chVuRTarget[i];
+                        const tL = smoothVuLevel(player._chVuLDisplay[i], player._chVuLTarget[i]);
+                        const tR = smoothVuLevel(player._chVuRDisplay[i], player._chVuRTarget[i]);
 
-                        // Add 0% to 5% jitter if channel is active (scale < 1)
-                        if (tL < 1) tL -= Math.random() * 0.03;
-                        if (tR < 1) tR -= Math.random() * 0.03;
+                        player._chVuLDisplay[i] = tL;
+                        player._chVuRDisplay[i] = tR;
 
-                        if (tL < 0) tL = 0;
-                        if (tR < 0) tR = 0;
-
-                        vuLeftControls[i].style.transform = `scaleY(${tL})`;
-                        vuRightControls[i].style.transform = `scaleY(${tR})`;
+                        vuLeftControls[i].style.transform = `scaleX(${tL})`;
+                        vuRightControls[i].style.transform = `scaleX(${tR})`;
                     }
                 }
             }
@@ -1829,6 +2180,11 @@
                 stopBtn.disabled = true;
                 renderWavBtn.disabled = false;
                 resetMasterVu();
+                for (let channel = 0; channel < 16; channel++) {
+                    activeChannelNotes[channel].clear();
+                    updateChannelVelocity(channel);
+                    vueMeterOff(channel);
+                }
             });
 
             player.on('onEnded', () => {
@@ -1858,36 +2214,54 @@
             const pianoContainer = document.getElementById('piano');
             const mixerContainer = document.getElementById('mixer');
 
-            // 1. Build Piano Channels Dropdown
-            for (let i = 0; i < 16; i++) {
-                const opt = document.createElement('option');
-                opt.value = i;
-                opt.textContent = `Channel ${i + 1}`;
-                if (i === 0) opt.selected = true; // default channel 0
-                pianoChannelSelect.appendChild(opt);
-            }
-
-            pianoChannelSelect.addEventListener('change', () => {
-                // Clear all currently highlighted keys
-                document.querySelectorAll('.key.active').forEach(el => el.classList.remove('active'));
-
-                // Ask the synth to resend the state of all active notes
-                player.resendActiveNotes();
-            });
-
-            // 2. Build Piano Roll (88 keys: MIDI 21 to 108)
+            // 1. Build compact Piano Rolls for all non-drum channels
             const keys = {};
+            const pianoChannelIcons = {};
+            const updatePianoChannelIcon = (channel, program) => {
+                const icon = pianoChannelIcons[channel];
+                if (!icon) return;
+
+                const programNumber = Number.isInteger(program) && program >= 0 && program < INSTRUMENT_LIST.length
+                    ? program
+                    : 0;
+                icon.innerHTML = setIconSize(getMidiIcon(programNumber, channel), 20, 20);
+                const instrumentName = INSTRUMENT_LIST[programNumber];
+                icon.parentElement.title = `Channel ${channel + 1}: ${instrumentName}`;
+            };
             const isBlack = (note) => {
                 const n = note % 12;
                 return n === 1 || n === 3 || n === 6 || n === 8 || n === 10;
             };
-            for (let note = 21; note <= 108; note++) {
-                const key = document.createElement('div');
-                key.classList.add('key');
-                key.classList.add(isBlack(note) ? 'black' : 'white');
-                key.id = `key-${note}`;
-                pianoContainer.appendChild(key);
-                keys[note] = key;
+            for (let channel = 0; channel < 16; channel++) {
+                if (channel === 9) continue;
+
+                const row = document.createElement('div');
+                row.className = 'piano-row';
+
+                const label = document.createElement('span');
+                label.className = 'piano-channel-label';
+                const icon = document.createElement('span');
+                icon.className = 'piano-channel-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                label.appendChild(icon);
+                label.appendChild(document.createTextNode(`CH ${channel + 1}`));
+                pianoChannelIcons[channel] = icon;
+                updatePianoChannelIcon(channel, 0);
+                row.appendChild(label);
+
+                const keyboard = document.createElement('div');
+                keyboard.className = 'piano-keys';
+                keys[channel] = {};
+
+                for (let note = 21; note <= 108; note++) {
+                    const key = document.createElement('div');
+                    key.classList.add('key', isBlack(note) ? 'black' : 'white');
+                    keyboard.appendChild(key);
+                    keys[channel][note] = key;
+                }
+
+                row.appendChild(keyboard);
+                pianoContainer.appendChild(row);
             }
 
             // 3. Build Mixer Channels
@@ -1903,8 +2277,23 @@
                     <div class="ch-label">${chName}</div>
 
                     <div class="vu-meter-container">
-                        <div class="vu-bar bar-left" id="vu-l-${i}" style="left: 0px;"></div>
-                        <div class="vu-bar bar-right" id="vu-r-${i}" style="right: 0px;"></div>
+                        <div class="vu-meter-track">
+                            <span class="vu-meter-label">L</span>
+                            <div class="vu-meter-scale">
+                                <div class="vu-bar bar-left" id="vu-l-${i}"></div>
+                            </div>
+                        </div>
+                        <div class="vu-meter-track">
+                            <span class="vu-meter-label">R</span>
+                            <div class="vu-meter-scale">
+                                <div class="vu-bar bar-right" id="vu-r-${i}"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="knob-track">
+                        <div class="knob-label">VOL</div>
+                        <input type="range" class="knob" id="vol-${i}" min="0" max="127" value="100">
                     </div>
                     
                     <div class="knob-track">
@@ -1922,11 +2311,9 @@
                         <input type="range" class="knob" id="ex-${i}" min="0" max="127" value="127">
                     </div>
                     
-                    <button class="solo-btn" id="solo-btn-${i}">SOLO</button>
-                    <button class="mute-btn" id="mute-btn-${i}">MUTE</button>
-
-                    <div class="fader-track">
-                        <input type="range" class="fader" id="vol-${i}" min="0" max="127" value="100" orient="vertical">
+                    <div class="mixer-channel-actions">
+                        <button class="solo-btn" id="solo-btn-${i}">SOLO</button>
+                        <button class="mute-btn" id="mute-btn-${i}">MUTE</button>
                     </div>
                 `;
                 mixerContainer.appendChild(strip);
@@ -1973,6 +2360,14 @@
 
 
             player.on('onMidiEvent', (event) => {
+                if (event.eventType === player.ME_PROGRAM && event.channel !== 9) {
+                    updatePianoChannelIcon(event.channel, player.getProgram(event.channel, event.tick));
+                }
+                if (event.eventType === player.ME_ALL_NOTES_OFF || event.eventType === player.ME_ALL_SOUNDS_OFF) {
+                    activeChannelNotes[event.channel].clear();
+                    updateChannelVelocity(event.channel);
+                }
+
                 // Subtitles / Lyrics (Meta Event 0xFF, channel 0x05, eventType ME_LYRIC)
                 if (event.status === 0xFF && event.channel === 0x05 && event.eventType === player.ME_LYRIC) {
                     if (event.text) {
@@ -1984,10 +2379,6 @@
                 if (event.eventType === player.ME_ALL_NOTES_OFF || event.eventType === player.ME_RESET_CONTROLLERS) {
                     // subtitleBox.textContent = ''; 
                 }
-
-                // Note On / Off for Piano Highlight
-                const selectedChannel = parseInt(pianoChannelSelect.value);
-
 
                 // Control Change events (volume/pan sync)
                 if (player.isSyncEnabled) {
@@ -2020,32 +2411,38 @@
             });
 
             player.on('onNoteOn', (event) => {
-                // Channel velocity
-                channelVelocity[event.channel] = event.velocity;
+                let velocities = activeChannelNotes[event.channel].get(event.pitch);
+                if (!velocities) {
+                    velocities = [];
+                    activeChannelNotes[event.channel].set(event.pitch, velocities);
+                }
+                velocities.push(event.velocity);
+                updateChannelVelocity(event.channel);
                 if (event.channel === 9) {
                     const drumPad = document.querySelector(`.drum-pad[data-note="${event.pitch}"]`);
                     if (drumPad) drumPad.classList.add('active');
                 }
-                const selectedChannel = parseInt(pianoChannelSelect.value);
-                if (event.channel == selectedChannel) {
-                    const key = keys[event.pitch];
-                    if (key) key.classList.add('active');
-                }
+                const channelKeys = keys[event.channel];
+                const key = channelKeys && channelKeys[event.pitch];
+                if (key) key.classList.add('active');
 
 
             });
 
             player.on('onNoteOff', (event) => {
-                channelVelocity[event.channel] = 0;
+                const velocities = activeChannelNotes[event.channel].get(event.pitch);
+                if (velocities && velocities.length) {
+                    velocities.pop();
+                    if (!velocities.length) activeChannelNotes[event.channel].delete(event.pitch);
+                }
+                updateChannelVelocity(event.channel);
                 if (event.channel === 9) {
                     const drumPad = document.querySelector(`.drum-pad[data-note="${event.pitch}"]`);
                     if (drumPad) drumPad.classList.remove('active');
                 }
-                const selectedChannel = parseInt(pianoChannelSelect.value);
-                if (event.channel == selectedChannel) {
-                    const key = keys[event.pitch];
-                    if (key) key.classList.remove('active');
-                }
+                const channelKeys = keys[event.channel];
+                const key = channelKeys && channelKeys[event.pitch];
+                if (key) key.classList.remove('active');
 
 
 

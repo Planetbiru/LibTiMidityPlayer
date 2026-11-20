@@ -2,6 +2,10 @@
 
 This is a WebAssembly port of the `libTiMidity` MIDI synthesizer engine, equipped with a comprehensive JavaScript API (`TimidityPlayer`) designed specifically for integration into a **Digital Audio Workstation (DAW)** operating in the web browser.
 
+## Live Demo
+
+Explore the player in your browser: [LibTiMidityPlayer Live Demo](https://planetbiru.github.io/LibTiMidityPlayer/).
+
 This project provides JavaScript bindings for libTiMidity. The bindings are licensed under MIT. The original C core remains under LGPL/Artistic.
 
 Modified C source code is included in src/c-core/modified and distributed under MIT, while original libTiMidity code remains under LGPL/Artistic
