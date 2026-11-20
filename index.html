@@ -261,9 +261,10 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
             position: absolute;
-            inset: 0;
-            transform-origin: right center;
-            transform: scaleX(1);
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: auto;
         }
 
         .pitch-bend-track {
@@ -416,9 +417,9 @@
             position: absolute;
             right: 0;
             top: 0;
+            bottom: 0;
+            left: auto;
             border-radius: 0;
-            transform-origin: right;
-            transform: scaleX(1);
         }
 
         #playPause{
@@ -1682,6 +1683,9 @@
 
         let player;
         const drumPads = [
+            { name: 'Sticks', pitch: 31, icon: DRUM_ICON_SET.drumstrick },
+            { name: 'Metronome Click', pitch: 33, icon: DRUM_ICON_SET.metronome },
+            { name: 'Metronome Bell', pitch: 34, icon: DRUM_ICON_SET.metronome },
             { name: 'Kick 1', pitch: 35, icon: DRUM_ICON_SET.kick },
             { name: 'Kick 2', pitch: 36, icon: DRUM_ICON_SET.kick },
             { name: 'Snare 1', pitch: 38, icon: DRUM_ICON_SET.snare },
@@ -1701,9 +1705,9 @@
             { name: 'Crash 2', pitch: 57, icon: DRUM_ICON_SET.cymbal },
             { name: 'Splash', pitch: 55, icon: DRUM_ICON_SET.cymbal },
             { name: 'China', pitch: 52, icon: DRUM_ICON_SET.cymbal },
-            { name: 'Ride 1', pitch: 51, icon: DRUM_ICON_SET.cymbal },
-            { name: 'Ride 2', pitch: 59, icon: DRUM_ICON_SET.cymbal },
-            { name: 'Ride Bell', pitch: 53, icon: DRUM_ICON_SET.cymbal },
+            { name: 'Ride 1', pitch: 51, icon: DRUM_ICON_SET.ridecymbal },
+            { name: 'Ride 2', pitch: 59, icon: DRUM_ICON_SET.ridecymbal },
+            { name: 'Ride Bell', pitch: 53, icon: DRUM_ICON_SET.ridebell },
             { name: 'Tambourine', pitch: 54, icon: DRUM_ICON_SET.tambourine },
             { name: 'Cowbell', pitch: 56, icon: DRUM_ICON_SET.cowbell },
             { name: 'Vibraslap', pitch: 58, icon: DRUM_ICON_SET.vibraslap },
@@ -2112,12 +2116,12 @@
                 // Left Channel
                 let widthL = player._vuL;
                 if (widthL > 100) widthL = 100;
-                document.getElementById('masterVuL').style.transform = `scaleX(${1 - (widthL / 100)})`;
+                document.getElementById('masterVuL').style.width = `${100 - widthL}%`;
 
                 // Right Channel
                 let widthR = player._vuR;
                 if (widthR > 100) widthR = 100;
-                document.getElementById('masterVuR').style.transform = `scaleX(${1 - (widthR / 100)})`;
+                document.getElementById('masterVuR').style.width = `${100 - widthR}%`;
 
                 // --- Channel VU Meter Animation ---
                 if (typeof player._chVuLTarget === 'undefined') {
@@ -2131,14 +2135,14 @@
 
                 for (let i = 0; i < 16; i++) {
                     if (vuLeftControls[i] && vuRightControls[i]) {
-                        const tL = smoothVuLevel(player._chVuLDisplay[i], player._chVuLTarget[i]);
-                        const tR = smoothVuLevel(player._chVuRDisplay[i], player._chVuRTarget[i]);
+                        const tL = Math.max(0, Math.min(1, smoothVuLevel(player._chVuLDisplay[i], player._chVuLTarget[i])));
+                        const tR = Math.max(0, Math.min(1, smoothVuLevel(player._chVuRDisplay[i], player._chVuRTarget[i])));
 
                         player._chVuLDisplay[i] = tL;
                         player._chVuRDisplay[i] = tR;
 
-                        vuLeftControls[i].style.transform = `scaleX(${tL})`;
-                        vuRightControls[i].style.transform = `scaleX(${tR})`;
+                        vuLeftControls[i].style.width = `${tL * 100}%`;
+                        vuRightControls[i].style.width = `${tR * 100}%`;
                     }
                 }
             }
@@ -2149,8 +2153,8 @@
             function resetMasterVu() {
                 player._vuL = 0;
                 player._vuR = 0;
-                document.getElementById('masterVuL').style.transform = 'scaleX(1)';
-                document.getElementById('masterVuR').style.transform = 'scaleX(1)';
+                document.getElementById('masterVuL').style.width = '100%';
+                document.getElementById('masterVuR').style.width = '100%';
                 document.getElementById('polyphonyCounter').textContent = '0';
             }
 
@@ -2361,7 +2365,7 @@
 
             player.on('onMidiEvent', (event) => {
                 if (event.eventType === player.ME_PROGRAM && event.channel !== 9) {
-                    updatePianoChannelIcon(event.channel, player.getProgram(event.channel, event.tick));
+                    updatePianoChannelIcon(event.channel, event.a);
                 }
                 if (event.eventType === player.ME_ALL_NOTES_OFF || event.eventType === player.ME_ALL_SOUNDS_OFF) {
                     activeChannelNotes[event.channel].clear();
