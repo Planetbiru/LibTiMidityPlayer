@@ -354,6 +354,22 @@ Sends a MIDI Note On message. Dynamically downloads the instrument patch if it h
 ### `noteOff(channel, pitch)`
 Sends a MIDI Note Off message.
 
+### `setRealtimeInstrument(channel, program, bank = 0)`
+Loads the required patch, if needed, and makes the specified program available in the real-time synthesizer.
+- **Parameters:**
+  - `channel` *(number)*: MIDI channel (0-15). Channel 9 uses drum patches.
+  - `program` *(number)*: Instrument program number (0-127); on channel 9, this identifies the drum note whose patch is loaded.
+  - `bank` *(number)*: Instrument bank or drumset bank. Defaults to `0`.
+- **Returns:** `Promise<boolean>` - Resolves to `true` if the program was loaded successfully, or `false` if the real-time synth is unavailable or the engine could not load the program. Rejects if patch loading fails.
+
+### `loadInstrumentForSong(channel, program, bank = 0)`
+Loads the required patch, if needed, into the currently loaded song's synthesizer. Use this when changing a song channel's instrument so the patch is ready for playback.
+- **Parameters:**
+  - `channel` *(number)*: MIDI channel (0-15). Channel 9 uses drum patches.
+  - `program` *(number)*: Instrument program number (0-127); on channel 9, this identifies the drum note whose patch is loaded.
+  - `bank` *(number)*: Instrument bank or drumset bank. Defaults to `0`.
+- **Returns:** `Promise<boolean>` - Resolves to `true` if the patch is ready or no song is currently loaded; resolves to `false` if the engine could not load the program or the song was replaced while the patch was loading. Rejects if patch loading fails.
+
 ### `sendEvent(eventType, channel, a, b = 0)`
 Broadcasts a general MIDI event to the active synthesizer.
 - **Parameters:**
@@ -368,7 +384,7 @@ Gets metadata and information about the currently loaded song.
 - **Returns:** `Object | null` - Parsed JSON object containing song info (title, copyright, text events, etc.).
 
 ### `getTempoMap()`
-Gets the parsed tempo map of the currently loaded MIDI song. In addition to the tempo/meter maps, this object contains the MIDI channels used by the song and per-channel maps for program and bank changes collected during MIDI parsing (see `getProgram()` and `getBank()`).
+Gets the parsed tempo map of the currently loaded MIDI song. In addition to the tempo/meter maps, this object contains the MIDI channels used by the song and per-channel maps for program, controller, and bank changes collected during MIDI parsing.
 
 - **Returns:** `Object | null` - An object with the following shape, or `null` if no song is loaded:
   ```js
@@ -383,9 +399,10 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
       maxTick: number,
       totalSeconds: number,
 
-      // NEW: per-channel event lists, sorted by ascending tick
+      // Per-channel event lists, sorted by ascending tick
       programMap: Array<Array<{ tick, channel, program }>>,     // index = channel 0..15
       volumeMap: Array<Array<{ tick, channel, value }>>,        // CC 7
+      panMap: Array<Array<{ tick, channel, value }>>,           // CC 10
       expressionMap: Array<Array<{ tick, channel, value }>>,    // CC 11
       bankMsbMap: Array<Array<{ tick, channel, value }>>,       // CC 0  (Bank Select MSB)
       bankLsbMap: Array<Array<{ tick, channel, value }>>        // CC 32 (Bank Select LSB)
@@ -394,8 +411,8 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
 - **Notes:**
   - `channelsUsed` is a sorted, duplicate-free array of MIDI channel numbers (0–15). It includes a channel if the MIDI file contains any channel voice event (status 0x8–0xE) on that channel, not only note events. For example, `[0, 9]` means the file uses channels 1 and 10; MIDI channel 10 is index `9`.
   - The map is available after MIDI parsing. For example, read `player.getTempoMap()?.channelsUsed` in an `onMidiLoaded` listener to determine which mixer strips correspond to channels present in the file.
-  - `programMap`, `volumeMap`, `expressionMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending. They are consumed internally by `getProgram()`, `getVolume()`, `getExpression()`, and `getBank()`.
-  - If the MIDI file does not contain any program/bank events on a channel, the corresponding inner array is empty.
+  - `programMap`, `volumeMap`, `panMap`, `expressionMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending. They are consumed internally by the corresponding program, controller, and bank lookup methods.
+  - If the MIDI file does not contain events for a map on a channel, that map's corresponding inner array is empty.
 
 ### `tickToBeat(tick)`
 Converts a MIDI tick into an absolute beat number (useful for syncing metronomes).
