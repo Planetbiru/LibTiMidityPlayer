@@ -2067,6 +2067,12 @@
             });
 
             let vuRenderId = null;
+            function smoothVuLevel(current, target) {
+                const smoothing = target < current ? 0.35 : 0.12;
+                const next = current + (target - current) * smoothing;
+                return Math.abs(target - next) < 0.001 ? target : next;
+            }
+
             function renderMeters() {
                 vuRenderId = requestAnimationFrame(renderMeters);
 
@@ -2118,14 +2124,18 @@
                     player._chVuLTarget = new Array(16).fill(1.0);
                     player._chVuRTarget = new Array(16).fill(1.0);
                 }
+                if (typeof player._chVuLDisplay === 'undefined') {
+                    player._chVuLDisplay = new Array(16).fill(1.0);
+                    player._chVuRDisplay = new Array(16).fill(1.0);
+                }
 
                 for (let i = 0; i < 16; i++) {
                     if (vuLeftControls[i] && vuRightControls[i]) {
-                        let tL = player._chVuLTarget[i];
-                        let tR = player._chVuRTarget[i];
+                        const tL = smoothVuLevel(player._chVuLDisplay[i], player._chVuLTarget[i]);
+                        const tR = smoothVuLevel(player._chVuRDisplay[i], player._chVuRTarget[i]);
 
-                        if (tL < 0) tL = 0;
-                        if (tR < 0) tR = 0;
+                        player._chVuLDisplay[i] = tL;
+                        player._chVuRDisplay[i] = tR;
 
                         vuLeftControls[i].style.transform = `scaleX(${tL})`;
                         vuRightControls[i].style.transform = `scaleX(${tR})`;
