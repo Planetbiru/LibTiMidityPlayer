@@ -82,3 +82,9 @@ The changes in this release were specifically made to meet the requirements for 
 - **Callback Timing Accuracy**: Modified `mid_song_read_wave` in `playmidi.c` to fire the Event Callback exactly when events are processed in the sample generation loop, drastically improving timing accuracy over the old static model.
 - **Expanded Event Callback Signature**: Modified the internal `MidEvent` structure to use `uintptr_t` instead of `uint8` for parameters `a` and `b`. This safely passes memory pointers (like string addresses for lyrics) back to JS. The callback now includes absolute time (milliseconds), event status, event type, and text.
 - **Offline Rendering Optimization**: Added a `skip_callback` parameter to `mid_song_read_wave` in `playmidi.c` and `timidity.h`. When set to 1, this prevents the `global_event_callback` from firing during audio sample generation. This is specifically used during offline WAV rendering to prevent excessive UI events and significantly speed up the processing time.
+
+### Fixed
+
+**Callbacks & VU Meters**
+- Fixed MIDI event callbacks reporting audio sample positions as MIDI ticks. Callbacks now use the event's actual MIDI tick, and the JavaScript player reads the active song tick for compatibility with the existing compiled library. This keeps controller lookups such as volume, pan, and expression aligned with the event timeline, preventing channel VU meters from incorrectly dropping to zero.
+- Fixed active-note resend callbacks to report the current MIDI tick instead of the audio sample position.
