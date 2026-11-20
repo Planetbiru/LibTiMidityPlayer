@@ -1557,6 +1557,7 @@
         <div class="panel">
             <div class="piano-header">
                 <h3>Piano Roll</h3>
+                <button id="resetChannelInstruments" type="button" disabled>Reset Instruments</button>
             </div>
             <div id="piano" class="piano-container"></div>
         </div>
@@ -1722,6 +1723,52 @@
         const activeChannelNotes = Array.from({ length: 16 }, () => new Map());
         let channelVelocity = new Array(16).fill(0);
 
+        const controllerMapNames = {
+            7: 'volumeMap',
+            10: 'panMap',
+            11: 'expressionMap'
+        };
+        const controllerDefaultValues = { 7: 100, 10: 64, 11: 127 };
+
+        function getCurrentSongTick() {
+            if (!player || player.songPtr === 0) return 0;
+            const currentTick = player.getCurrentTick();
+            return Number.isFinite(currentTick) && currentTick >= 0 ? currentTick : 0;
+        }
+
+        function updateControllerMapAtCurrentTick(channel, controllerNumber, value) {
+            const mapName = controllerMapNames[controllerNumber];
+            const controllerMap = player && player.tempoMap && player.tempoMap[mapName];
+            if (!controllerMap || !Number.isInteger(channel) || channel < 0 || channel > 15) return;
+
+            if (!Array.isArray(controllerMap[channel])) controllerMap[channel] = [];
+            const events = controllerMap[channel];
+            const tick = getCurrentSongTick();
+            const event = { tick, channel, value };
+            const insertIndex = events.findIndex(existingEvent => existingEvent.tick > tick);
+            events.splice(insertIndex === -1 ? events.length : insertIndex, 0, event);
+        }
+
+        function getChannelControllerValueAtTick(channel, controllerNumber, tick) {
+            const mapName = controllerMapNames[controllerNumber];
+            const events = player && player.tempoMap && player.tempoMap[mapName] &&
+                player.tempoMap[mapName][channel];
+            if (Array.isArray(events)) {
+                let value = controllerDefaultValues[controllerNumber];
+                for (const event of events) {
+                    if (event.tick > tick) break;
+                    value = event.value;
+                }
+                return value;
+            }
+
+            if (player && player.songPtr !== 0) {
+                const value = player.getControllerValueAtTick(channel, controllerNumber, tick);
+                if (value >= 0) return value;
+            }
+            return controllerDefaultValues[controllerNumber];
+        }
+
         function updateChannelVelocity(channel) {
             let peakVelocity = 0;
             for (const velocities of activeChannelNotes[channel].values()) {
@@ -1811,9 +1858,14 @@
             const closeChannelInstrumentButton = document.getElementById("closeChannelInstrumentModal");
             const cancelChannelInstrumentButton = document.getElementById("cancelChannelInstrument");
             const applyChannelInstrumentButton = document.getElementById("applyChannelInstrument");
+            const resetChannelInstrumentsButton = document.getElementById("resetChannelInstruments");
             let editingPianoChannel = null;
             let editingPianoIcon = null;
             let isApplyingChannelInstrument = false;
+            let resetChannelProgramsAtTick = null;
+            let seekInstrumentResetTimer = null;
+            let pendingSeekTick = 0;
+            let channelInstrumentRevision = 0;
 
             
             songInfoBtn.onclick = () => {
@@ -2065,7 +2117,9 @@
             });
 
             player.on('onMidiLoaded', (midi) => {
+                channelInstrumentRevision++;
                 statusEl.textContent = `Loaded: ${midi.name || 'MIDI File'}`;
+                resetChannelInstrumentsButton.disabled = false;
                 const channelsUsed = player.tempoMap?.channelsUsed;
                 if (Array.isArray(channelsUsed)) {
                     for (let channel = 0; channel < 16; channel++) {
@@ -2075,7 +2129,7 @@
                 }
                 for (let channel = 0; channel < 16; channel++) {
                     if (channel !== 9) {
-                        updatePianoChannelIcon(channel, player.getProgram(channel, 0));
+                        updatePianoChannelIcon(channel, player.getProgram(channel, 0), player.getBank(channel, 0));
                     }
                 }
                 playPauseBtn.textContent = 'Play'; // Reset button text
@@ -2239,6 +2293,7 @@
             });
 
             player.on('onStop', () => {
+                channelInstrumentRevision++;
                 statusEl.textContent = "Song freed.";
                 playPauseBtn.textContent = "Play";
                 playPauseBtn.disabled = false; // Disable buttons after stop
@@ -2267,6 +2322,16 @@
                 currentTimeEl.textContent = player.formatTime(timeInSeconds);
                 seekerEl.value = timeInSeconds;
                 statusEl.textContent = `Seeking to ${player.formatTime(timeInSeconds)}...`;
+                pendingSeekTick = tick;
+                if (seekInstrumentResetTimer !== null) {
+                    window.clearTimeout(seekInstrumentResetTimer);
+                }
+                seekInstrumentResetTimer = window.setTimeout(() => {
+                    seekInstrumentResetTimer = null;
+                    if (resetChannelProgramsAtTick) {
+                        resetChannelProgramsAtTick(pendingSeekTick);
+                    }
+                }, 0);
             });
 
             player.on('onInstrumentLoading', (loaded, total, pathToLoad) => {
@@ -2286,18 +2351,54 @@
             const keys = {};
             const pianoChannelIcons = {};
             const pianoChannelPrograms = {};
-            const updatePianoChannelIcon = (channel, program) => {
+            const pianoChannelBanks = {};
+            const updatePianoChannelIcon = (channel, program, bank = 0) => {
                 const icon = pianoChannelIcons[channel];
                 if (!icon) return;
 
                 const programNumber = Number.isInteger(program) && program >= 0 && program < INSTRUMENT_LIST.length
                     ? program
                     : 0;
+                const bankNumber = Number.isInteger(bank) && bank >= 0 && bank <= 127 ? bank : 0;
                 pianoChannelPrograms[channel] = programNumber;
+                pianoChannelBanks[channel] = bankNumber;
                 icon.innerHTML = setIconSize(getMidiIcon(programNumber, channel), 20, 20);
                 const instrumentName = INSTRUMENT_LIST[programNumber];
-                icon.parentElement.title = `Channel ${channel + 1}: MIDI Program ${programNumber} - ${instrumentName}`;
-                icon.setAttribute('aria-label', `Change instrument for channel ${channel + 1}: MIDI Program ${programNumber}, ${instrumentName}`);
+                icon.parentElement.title = `Channel ${channel + 1}: MIDI Program ${programNumber} - ${instrumentName}, Bank ${bankNumber}`;
+                icon.setAttribute('aria-label', `Change instrument for channel ${channel + 1}: MIDI Program ${programNumber}, ${instrumentName}, Bank ${bankNumber}`);
+            };
+            resetChannelProgramsAtTick = (tick, announce = false) => {
+                if (!player.tempoMap) {
+                    if (announce) statusEl.textContent = "Load a MIDI file before resetting channel instruments.";
+                    return false;
+                }
+
+                channelInstrumentRevision++;
+                const resetTick = Number.isFinite(tick) && tick >= 0 ? tick : 0;
+                for (let channel = 0; channel < 16; channel++) {
+                    if (channel === 9) continue;
+
+                    const programValue = player.getProgram(channel, resetTick);
+                    const bankValue = player.getBank(channel, resetTick);
+                    const program = Number.isInteger(programValue) && programValue >= 0 && programValue < INSTRUMENT_LIST.length
+                        ? programValue
+                        : 0;
+                    const bank = Number.isInteger(bankValue) && bankValue >= 0 && bankValue <= 127
+                        ? bankValue
+                        : 0;
+                    player.sendEvent(player.ME_TONE_BANK, channel, bank);
+                    player.sendEvent(player.ME_PROGRAM, channel, program);
+                    updatePianoChannelIcon(channel, program, bank);
+                }
+                if (announce) {
+                    statusEl.textContent = `Channel instruments reset to the original MIDI programs at tick ${Math.floor(resetTick)}.`;
+                }
+                return true;
+            };
+            resetChannelInstrumentsButton.onclick = () => {
+                if (resetChannelProgramsAtTick) {
+                    resetChannelProgramsAtTick(getCurrentSongTick(), true);
+                }
             };
             const handlePianoPreviewError = (channel, key, error) => {
                 key.classList.remove('preview-active');
@@ -2315,10 +2416,6 @@
                 if (icon) icon.focus();
             };
             const openChannelInstrumentModal = (channel, icon) => {
-                if (player.isPlaying && !player.isPaused) {
-                    statusEl.textContent = "Pause or stop MIDI playback before changing a channel instrument.";
-                    return;
-                }
                 editingPianoChannel = channel;
                 editingPianoIcon = icon;
                 channelInstrumentTitle.textContent = `Channel ${channel + 1} Instrument`;
@@ -2331,10 +2428,6 @@
             cancelChannelInstrumentButton.onclick = closeChannelInstrumentModal;
             applyChannelInstrumentButton.onclick = async () => {
                 if (editingPianoChannel === null) return;
-                if (player.isPlaying && !player.isPaused) {
-                    channelInstrumentStatus.textContent = "Pause or stop MIDI playback before applying an instrument.";
-                    return;
-                }
 
                 const channel = editingPianoChannel;
                 const program = Number(channelInstrumentSelect.value);
@@ -2348,10 +2441,29 @@
                 cancelChannelInstrumentButton.disabled = true;
                 channelInstrumentStatus.textContent = "Loading instrument...";
                 try {
-                    const loaded = await player.setRealtimeInstrument(channel, program, 0);
-                    if (!loaded) throw new Error("The selected instrument could not be loaded.");
-                    updatePianoChannelIcon(channel, program);
-                    statusEl.textContent = `Channel ${channel + 1} preview instrument: ${INSTRUMENT_LIST[program]}.`;
+                    const revision = channelInstrumentRevision;
+                    const targetSongPtr = player.songPtr;
+                    const realtimeLoaded = await player.setRealtimeInstrument(channel, program, 0);
+                    if (!realtimeLoaded) throw new Error("The selected instrument could not be loaded.");
+                    if (revision !== channelInstrumentRevision) {
+                        channelInstrumentStatus.textContent = "Instrument change canceled because channel programs were reset.";
+                        return;
+                    }
+                    if (targetSongPtr !== 0) {
+                        const songLoaded = await player.loadInstrumentForSong(channel, program, 0);
+                        if (!songLoaded) throw new Error("The selected instrument could not be loaded into the MIDI song.");
+                    }
+                    if (revision !== channelInstrumentRevision) {
+                        channelInstrumentStatus.textContent = "Instrument change canceled because channel programs were reset.";
+                        return;
+                    }
+                    if (player.songPtr !== targetSongPtr) {
+                        throw new Error("The MIDI song changed before the instrument could be applied.");
+                    }
+                    player.sendEvent(player.ME_TONE_BANK, channel, 0);
+                    player.sendEvent(player.ME_PROGRAM, channel, program);
+                    updatePianoChannelIcon(channel, program, 0);
+                    statusEl.textContent = `Channel ${channel + 1} instrument changed to ${INSTRUMENT_LIST[program]}.`;
                     isApplyingChannelInstrument = false;
                     closeChannelInstrumentModal();
                 } catch (error) {
@@ -2407,7 +2519,9 @@
                         key.classList.add('preview-active');
                         let noteOn;
                         try {
-                            noteOn = player.noteOn(channel, program, note, 100);
+                            noteOn = player.noteOn(channel, program, note, 100, {
+                                bank: pianoChannelBanks[channel] || 0
+                            });
                         } catch (error) {
                             handlePianoPreviewError(channel, key, error);
                             return;
@@ -2496,10 +2610,14 @@
                 });
 
                 document.getElementById(`vol-${i}`).addEventListener('input', (e) => {
-                    player.sendEvent(player.ME_MAINVOLUME, i, parseInt(e.target.value));
+                    const value = Number(e.target.value);
+                    updateControllerMapAtCurrentTick(i, 7, value);
+                    player.sendEvent(player.ME_MAINVOLUME, i, value);
                 });
                 document.getElementById(`pan-${i}`).addEventListener('input', (e) => {
-                    player.sendEvent(player.ME_PAN, i, parseInt(e.target.value));
+                    const value = Number(e.target.value);
+                    updateControllerMapAtCurrentTick(i, 10, value);
+                    player.sendEvent(player.ME_PAN, i, value);
                 });
                 document.getElementById(`pb-${i}`).addEventListener('input', (e) => {
                     const value = parseInt(e.target.value);
@@ -2509,7 +2627,9 @@
                     player.sendEvent(player.ME_PITCHWHEEL, i, lsb, msb);
                 });
                 document.getElementById(`ex-${i}`).addEventListener('input', (e) => {
-                    player.sendEvent(player.ME_EXPRESSION, i, parseInt(e.target.value));
+                    const value = Number(e.target.value);
+                    updateControllerMapAtCurrentTick(i, 11, value);
+                    player.sendEvent(player.ME_EXPRESSION, i, value);
                 });
             }
 
@@ -2524,7 +2644,9 @@
 
             player.on('onMidiEvent', (event) => {
                 if (event.eventType === player.ME_PROGRAM && event.channel !== 9) {
-                    updatePianoChannelIcon(event.channel, event.a);
+                    updatePianoChannelIcon(event.channel, event.a, player.getBank(event.channel, event.tick));
+                } else if (event.eventType === player.ME_TONE_BANK && event.channel !== 9) {
+                    updatePianoChannelIcon(event.channel, pianoChannelPrograms[event.channel] || 0, event.a);
                 }
                 if (event.eventType === player.ME_ALL_NOTES_OFF || event.eventType === player.ME_ALL_SOUNDS_OFF) {
                     activeChannelNotes[event.channel].clear();
@@ -2837,9 +2959,9 @@
 
             if (vuL && vuR) {
                 // Get controller values at the exact tick of the noteOn event
-                const volume = player.getControllerValueAtTick(channel, 7, tick);
-                const expression = player.getControllerValueAtTick(channel, 11, tick);
-                const pan = player.getControllerValueAtTick(channel, 10, tick);
+                const volume = getChannelControllerValueAtTick(channel, 7, tick);
+                const expression = getChannelControllerValueAtTick(channel, 11, tick);
+                const pan = getChannelControllerValueAtTick(channel, 10, tick);
 
                 // Calculate base volume (0.0 to 1.0)
                 const baseVolume = (velocity / 127) * (volume / 127) * (expression / 127);
