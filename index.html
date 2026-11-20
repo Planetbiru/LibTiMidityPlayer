@@ -922,7 +922,7 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            padding: 5px;
+            padding: 5px 5px 14px 0px;
             border-radius: 8px;
             background: #0c131c;
             overflow-x: auto;
@@ -940,11 +940,18 @@
 
         .piano-channel-label {
             display: flex;
-            width: 72px;
-            flex: 0 0 72px;
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            width: 80px;
+            flex: 0 0 80px;
+            box-sizing: border-box;
+            align-self: stretch;
             align-items: center;
-            justify-content: flex-end;
+            justify-content: flex-start;
             gap: 5px;
+            padding-left: 10px;
+            background: #0c131c;
             color: #9aabba;
             font-size: 0.8rem;
             white-space: nowrap;
@@ -974,6 +981,7 @@
         .piano-keys .key.white {
             width: 16px;
             height: 38px;
+            cursor: pointer;
             border-color: #c5d0d5;
             background: linear-gradient(180deg, #f8fafb 0%, #d7e0e5 100%);
         }
@@ -983,6 +991,7 @@
             height: 24px;
             margin-left: -5px;
             margin-right: -5px;
+            cursor: pointer;
             border-color: #0b1017;
             background: linear-gradient(180deg, #40515f, #111923 80%);
         }
@@ -999,12 +1008,14 @@
             background: linear-gradient(180deg, #40515f, #111923 80%);
         }
 
-        .key.active.white {
+        .key.active.white,
+        .key.preview-active.white {
             background: linear-gradient(180deg, #ffc857, #e68600);
             box-shadow: 0 0 14px rgba(230, 134, 0, 0.7);
         }
 
-        .key.active.black {
+        .key.active.black,
+        .key.preview-active.black {
             background: linear-gradient(180deg, #e6a14a, #b96816);
             box-shadow: 0 0 10px rgba(230, 161, 74, 0.55);
         }
@@ -2221,6 +2232,7 @@
             // 1. Build compact Piano Rolls for all non-drum channels
             const keys = {};
             const pianoChannelIcons = {};
+            const pianoChannelPrograms = {};
             const updatePianoChannelIcon = (channel, program) => {
                 const icon = pianoChannelIcons[channel];
                 if (!icon) return;
@@ -2228,9 +2240,16 @@
                 const programNumber = Number.isInteger(program) && program >= 0 && program < INSTRUMENT_LIST.length
                     ? program
                     : 0;
+                pianoChannelPrograms[channel] = programNumber;
                 icon.innerHTML = setIconSize(getMidiIcon(programNumber, channel), 20, 20);
                 const instrumentName = INSTRUMENT_LIST[programNumber];
-                icon.parentElement.title = `Channel ${channel + 1}: ${instrumentName}`;
+                icon.parentElement.title = `Channel ${channel + 1}: MIDI Program ${programNumber} - ${instrumentName}`;
+            };
+            const handlePianoPreviewError = (channel, key, error) => {
+                key.classList.remove('preview-active');
+                const message = error && error.message ? error.message : String(error);
+                console.error(`Piano preview failed on channel ${channel + 1}:`, error);
+                statusEl.textContent = `Piano preview failed: ${message}`;
             };
             const isBlack = (note) => {
                 const n = note % 12;
@@ -2262,6 +2281,25 @@
                     key.classList.add('key', isBlack(note) ? 'black' : 'white');
                     keyboard.appendChild(key);
                     keys[channel][note] = key;
+                    key.addEventListener('click', () => {
+                        const program = pianoChannelPrograms[channel] || 0;
+                        key.classList.add('preview-active');
+                        let noteOn;
+                        try {
+                            noteOn = player.noteOn(channel, program, note, 100);
+                        } catch (error) {
+                            handlePianoPreviewError(channel, key, error);
+                            return;
+                        }
+                        Promise.resolve(noteOn)
+                            .then(() => {
+                                window.setTimeout(() => {
+                                    player.noteOff(channel, note);
+                                    key.classList.remove('preview-active');
+                                }, 300);
+                            })
+                            .catch((error) => handlePianoPreviewError(channel, key, error));
+                    });
                 }
 
                 row.appendChild(keyboard);
