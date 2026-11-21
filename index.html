@@ -128,12 +128,15 @@
 
         /* Subtitle */
         #subtitleBox {
-            font-size: 1.5em;
+            font-size: 1.05em;
             text-align: center;
-            min-height: 50px;
+            height: 44px;
+            box-sizing: border-box;
+            line-height: 30px;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 6px 16px;
             color: #fff;
             text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
             letter-spacing: 1px;
@@ -480,7 +483,7 @@
         }
 
         body {
-            width: min(100%, 1600px);
+            width: min(100%, 1680px);
             min-height: 100vh;
             margin: 0 auto;
             padding: clamp(10px, 2vw, 24px);
@@ -495,7 +498,7 @@
 
         .app-grid {
             display: grid;
-            grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+            grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.85fr);
             gap: 10px;
         }
 
@@ -925,11 +928,14 @@
         }
 
         #subtitleBox {
-            min-height: 48px;
+            height: 44px;
+            box-sizing: border-box;
+            line-height: 30px;
+            padding: 3px 16px;
             border-color: #2b4654;
             background: linear-gradient(110deg, rgba(34, 64, 77, 0.55), rgba(18, 27, 38, 0.9));
             color: #f1f7fa;
-            font-size: clamp(1.2rem, 2.5vw, 1.7rem);
+            font-size: clamp(0.9rem, 1.6vw, 1.15rem);   /* ← diperkecil */
             letter-spacing: 0.01em;
             text-shadow: none;
         }
@@ -1566,7 +1572,7 @@
         </div>
     </div>
 
-    <div class="panel" id="subtitleBox"></div>
+    <div class="panel" id="subtitleBox" aria-live="polite"></div>
 
     <div class="app-grid">
         <div class="panel">
@@ -2138,6 +2144,8 @@
             player.on('onMidiLoaded', (midi) => {
                 channelInstrumentRevision++;
                 statusEl.textContent = `Loaded: ${midi.name || 'MIDI File'}`;
+                lyricEvents = parseMidiLyricEvents(player.lastMidiData || midi);
+                updateLyricForTick(0);
                 resetChannelInstrumentsButton.disabled = false;
                 const channelsUsed = player.tempoMap?.channelsUsed;
                 if (Array.isArray(channelsUsed)) {
@@ -2201,6 +2209,7 @@
                 }
                 currentTimeEl.textContent = player.formatTime(elapsedSecs);
                 tickCounterEl.textContent = Math.floor(tick);
+                updateLyricForTick(tick);
 
                 // Update DAW Meters
                 const activeVoices = player.getActiveVoices();
@@ -2341,6 +2350,7 @@
                 currentTimeEl.textContent = player.formatTime(timeInSeconds);
                 seekerEl.value = timeInSeconds;
                 statusEl.textContent = `Seeking to ${player.formatTime(timeInSeconds)}...`;
+                updateLyricForTick(tick);
                 pendingSeekTick = tick;
                 if (seekInstrumentResetTimer !== null) {
                     window.clearTimeout(seekInstrumentResetTimer);
@@ -2365,6 +2375,137 @@
             const subtitleBox = document.getElementById('subtitleBox');
             const pianoContainer = document.getElementById('piano');
             const mixerContainer = document.getElementById('mixer');
+            let lyricEvents = [];
+
+            function readMidiVariableLength(data, offset) {
+                let value = 0;
+                do {
+                    if (offset >= data.length) return null;
+                    const byte = data[offset++];
+                    value = (value << 7) | (byte & 0x7f);
+                    if ((byte & 0x80) === 0) return { value, offset };
+                } while (true);
+            }
+
+            function parseMidiLyricEvents(midiData) {
+                if (!(midiData instanceof Uint8Array) || midiData.length < 14) return [];
+
+                const headerSignature = String.fromCharCode(
+                    midiData[0], midiData[1], midiData[2], midiData[3]
+                );
+                if (headerSignature !== 'MThd') return [];
+
+                const trackCount = (midiData[10] << 8) | midiData[11];
+                const headerLength = (
+                    (midiData[4] << 24) |
+                    (midiData[5] << 16) |
+                    (midiData[6] << 8) |
+                    midiData[7]
+                ) >>> 0;
+                const events = [];
+                let offset = 8 + headerLength;
+
+                for (let track = 0; track < trackCount; track++) {
+                    if (offset + 8 > midiData.length) break;
+                    const signature = String.fromCharCode(
+                        midiData[offset], midiData[offset + 1],
+                        midiData[offset + 2], midiData[offset + 3]
+                    );
+                    if (signature !== 'MTrk') {
+                        offset++;
+                        continue;
+                    }
+
+                    const trackLength = (
+                        (midiData[offset + 4] << 24) |
+                        (midiData[offset + 5] << 16) |
+                        (midiData[offset + 6] << 8) |
+                        midiData[offset + 7]
+                    ) >>> 0;
+                    offset += 8;
+                    const trackEnd = Math.min(offset + trackLength, midiData.length);
+                    let absoluteTick = 0;
+                    let runningStatus = null;
+
+                    while (offset < trackEnd) {
+                        const delta = readMidiVariableLength(midiData, offset);
+                        if (!delta) break;
+                        offset = delta.offset;
+                        absoluteTick += delta.value;
+
+                        let status = midiData[offset];
+                        if ((status & 0x80) !== 0) {
+                            offset++;
+                        } else {
+                            if (runningStatus === null) break;
+                            status = runningStatus;
+                        }
+
+                        if (status === 0xff) {
+                            runningStatus = null;
+                            if (offset >= trackEnd) break;
+                            const metaType = midiData[offset++];
+                            const length = readMidiVariableLength(midiData, offset);
+                            if (!length) break;
+                            offset = length.offset;
+                            if (offset + length.value > trackEnd) break;
+
+                            if (metaType === 0x05) {
+                                const textBytes = midiData.subarray(offset, offset + length.value);
+                                const text = new TextDecoder('utf-8', { fatal: false }).decode(textBytes);
+                                if (text) events.push({ tick: absoluteTick, text });
+                            }
+                            offset += length.value;
+                        } else if (status === 0xf0 || status === 0xf7) {
+                            runningStatus = null;
+                            const length = readMidiVariableLength(midiData, offset);
+                            if (!length) break;
+                            offset = length.offset + length.value;
+                            if (offset > trackEnd) break;
+                        } else if ((status & 0xf0) !== 0xf0) {
+                            runningStatus = status;
+                            const dataLength = (status & 0xf0) === 0xc0 || (status & 0xf0) === 0xd0 ? 1 : 2;
+                            offset += dataLength;
+                            if (offset > trackEnd) break;
+                        } else {
+                            runningStatus = null;
+                            if (offset >= trackEnd) break;
+                        }
+                    }
+                    offset = trackEnd;
+                }
+
+                events.sort((a, b) => a.tick - b.tick);
+                return events.map((event) => ({
+                    tick: event.tick,
+                    time: player.tickToTime(event.tick),
+                    text: event.text
+                }));
+            }
+
+            function normalizeLyricText(text) {
+                return String(text)
+                    .replace(/\u0000/g, '')
+                    .replace(/\r\n/g, '\n')
+                    .replace(/\r/g, '\n')
+                    .replace(/^\s+|\s+$/g, '');
+            }
+
+            function updateLyricForTick(tick) {
+                if (lyricEvents.length === 0) {
+                    subtitleBox.textContent = '';
+                    return;
+                }
+
+                let lyric = '';
+                for (const event of lyricEvents) {
+                    if (event.tick > tick) break;
+                    lyric = normalizeLyricText(event.text);
+                }
+
+                lyric = lyric.trim();
+                subtitleBox.textContent = lyric;
+            }
 
             // 1. Build compact Piano Rolls for all non-drum channels
             const keys = {};
@@ -2672,11 +2813,21 @@
                     updateChannelVelocity(event.channel);
                 }
 
-                // Subtitles / Lyrics (Meta Event 0xFF, channel 0x05, eventType ME_LYRIC)
-                if (event.status === 0xFF && event.channel === 0x05 && event.eventType === player.ME_LYRIC) {
+                // Lyrics (Meta Event 0xFF, eventType ME_LYRIC)
+                if (event.status === 0xFF && event.eventType === player.ME_LYRIC) {
                     if (event.text) {
-                        // replace \r or \n with space
-                        subtitleBox.textContent += event.text.replace(/[\r\n]+/g, ' '); // Use event.text directly
+                        const alreadyRecorded = lyricEvents.some((lyricEvent) =>
+                            lyricEvent.tick === event.tick && lyricEvent.text === event.text
+                        );
+                        if (!alreadyRecorded) {
+                            lyricEvents.push({
+                                tick: event.tick,
+                                time: event.timeSecond,
+                                text: event.text
+                            });
+                            lyricEvents.sort((a, b) => a.tick - b.tick);
+                        }
+                        updateLyricForTick(event.tick);
                     }
                 }
                 // Lyrics reset hack on seek
