@@ -1370,6 +1370,264 @@
             background: #28967c !important;
         }
 
+        .equalizer-panel {
+            width: 100%;
+            padding-top: 14px;
+            padding-bottom: 14px;
+        }
+
+        .equalizer-header {
+            display: flex;
+            width: min(100%, 900px);
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-right: auto;
+            margin-left: auto;
+            margin-bottom: 12px;
+        }
+
+        .equalizer-header h3 {
+            margin: 0;
+        }
+
+        .equalizer-help {
+            margin: 3px 0 0;
+            color: var(--muted-color);
+            font-size: 0.78rem;
+        }
+
+        .equalizer-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .equalizer-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: #dce8f1;
+            font-size: 0.88rem;
+            font-weight: 600;
+        }
+
+        .equalizer-toggle input {
+            accent-color: var(--accent-color);
+        }
+
+        .equalizer-reset {
+            padding: 6px 10px;
+            font-size: 0.78rem;
+        }
+
+        .equalizer-control-layout {
+            --eq-slider-height: 120px;
+            --eq-slider-top: 58px;
+            --eq-guide-inset: 9px;
+            display: grid;
+            width: min(100%, 900px);
+            grid-template-columns: 32px minmax(0, 1fr);
+            align-items: start;
+            gap: 8px;
+            margin: 0 auto;
+        }
+
+        .equalizer-scale {
+            position: relative;
+            height: calc(var(--eq-slider-height) - (2 * var(--eq-guide-inset)));
+            margin-top: calc(var(--eq-slider-top) + var(--eq-guide-inset));
+            color: #8fa4b5;
+            font-family: monospace;
+            font-size: 0.62rem;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+            pointer-events: none;
+        }
+
+        .equalizer-scale span {
+            position: absolute;
+            right: 0;
+            transform: translateY(-50%);
+        }
+
+        .equalizer-scale span:nth-child(1) {
+            top: 0;
+            transform: translateY(-50%);
+        }
+
+        .equalizer-scale span:nth-child(2) { top: 25%; }
+        .equalizer-scale span:nth-child(3) { top: 50%; color: #c4d2de; }
+        .equalizer-scale span:nth-child(4) { top: 75%; }
+
+        .equalizer-scale span:nth-child(5) {
+            top: 100%;
+            transform: translateY(-50%);
+        }
+
+        .equalizer-bands {
+            display: grid;
+            width: 100%;
+            grid-template-columns: repeat(10, minmax(36px, 1fr));
+            gap: 8px;
+            margin: 0;
+        }
+
+        .equalizer-band {
+            position: relative;
+            display: flex;
+            width: 64px;
+            max-width: 100%;
+            justify-self: center;
+            min-width: 0;
+            flex-direction: column;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 4px 8px;
+            border: 1px solid #293b4b;
+            border-radius: 10px;
+            background: linear-gradient(180deg, rgba(28, 43, 57, 0.86), rgba(11, 19, 28, 0.72));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+            transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+        }
+
+        .equalizer-band::before {
+            position: absolute;
+            z-index: 2;
+            top: calc(var(--eq-slider-top) + var(--eq-guide-inset));
+            right: 8px;
+            left: 8px;
+            height: calc(var(--eq-slider-height) - (2 * var(--eq-guide-inset)));
+            background: linear-gradient(to bottom,
+                rgba(143, 164, 181, 0.2) 1px,
+                transparent 1px 24.5%,
+                rgba(143, 164, 181, 0.2) 24.5% 25.5%,
+                transparent 25.5% 49%,
+                rgba(85, 230, 193, 0.45) 49% 51%,
+                transparent 51% 74.5%,
+                rgba(143, 164, 181, 0.2) 74.5% 75.5%,
+                transparent 75.5% 99%,
+                rgba(143, 164, 181, 0.2) 99% 100%);
+            content: "";
+            pointer-events: none;
+        }
+
+        .equalizer-band::after {
+            position: absolute;
+            z-index: 1;
+            top: var(--eq-slider-top);
+            left: 50%;
+            width: 6px;
+            height: var(--eq-slider-height);
+            border-radius: 4px;
+            background: #40566a;
+            content: "";
+            pointer-events: none;
+            transform: translateX(-50%);
+        }
+
+        .equalizer-band:hover,
+        .equalizer-band:focus-within {
+            border-color: rgba(85, 230, 193, 0.68);
+            background: linear-gradient(180deg, rgba(31, 54, 65, 0.96), rgba(12, 24, 32, 0.88));
+            box-shadow: 0 0 0 1px rgba(85, 230, 193, 0.08), 0 5px 16px rgba(0, 0, 0, 0.16);
+        }
+
+        .equalizer-frequency {
+            box-sizing: border-box;
+            width: 56px;
+            margin-bottom: 6px;
+            padding: 1px 3px;
+            border: 1px solid rgba(139, 155, 173, 0.14);
+            border-radius: 6px;
+            background: rgba(8, 14, 21, 0.52);
+            color: #d7e3ed;
+            font-size: 0.7rem;
+            font-weight: 600;
+            font-family: inherit;
+            line-height: 1.2;
+            text-align: center;
+            white-space: nowrap;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .equalizer-frequency:focus-visible {
+            outline: 2px solid rgba(85, 230, 193, 0.7);
+            outline-offset: 2px;
+        }
+
+        input[type=range].equalizer-slider {
+            position: relative;
+            z-index: 3;
+            width: 20px;
+            height: var(--eq-slider-height);
+            margin: 1px 0;
+            appearance: none;
+            -webkit-appearance: none;
+            background: transparent;
+            writing-mode: vertical-lr;
+            direction: rtl;
+            cursor: pointer;
+        }
+
+        input[type=range].equalizer-slider:focus-visible {
+            outline: 2px solid rgba(85, 230, 193, 0.7);
+            outline-offset: 3px;
+            border-radius: 8px;
+        }
+
+        .equalizer-slider::-webkit-slider-runnable-track {
+            width: 6px;
+            border-radius: 4px;
+            background: transparent;
+        }
+
+        .equalizer-slider::-webkit-slider-thumb {
+            width: 18px;
+            height: 18px;
+            margin-left: -6px;
+            border: 2px solid #0b1017;
+            border-radius: 50%;
+            background: var(--accent-color);
+            box-shadow: 0 0 8px rgba(85, 230, 193, 0.45);
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .equalizer-slider::-moz-range-track {
+            width: 6px;
+            border-radius: 4px;
+            background: transparent;
+        }
+
+        .equalizer-slider::-moz-range-progress {
+            background: transparent;
+        }
+
+        .equalizer-slider::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border: 2px solid #0b1017;
+            border-radius: 50%;
+            background: var(--accent-color);
+            box-shadow: 0 0 8px rgba(85, 230, 193, 0.45);
+        }
+
+        .equalizer-value {
+            box-sizing: border-box;
+            width: 52px;
+            min-height: 1.1em;
+            padding: 0;
+            color: #a9bac9;
+            font-family: monospace;
+            font-size: 0.7rem;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
         #renderProgress,
         #stemsProgress {
             accent-color: var(--accent-color);
@@ -1409,6 +1667,14 @@
             .mixer-header {
                 align-items: flex-start;
                 flex-direction: column;
+            }
+
+            .equalizer-bands {
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+            }
+
+            .equalizer-control-layout {
+                --eq-slider-height: 105px;
             }
 
             .master-output {
@@ -1460,6 +1726,30 @@
             .panel,
             body > .panel:first-child {
                 padding: 17px;
+            }
+
+            .equalizer-control-layout {
+                --eq-slider-height: 90px;
+            }
+
+            .equalizer-band {
+                width: 54px;
+            }
+
+            .equalizer-frequency,
+            .equalizer-value {
+                width: 44px;
+                max-width: 100%;
+            }
+
+            .equalizer-frequency {
+                padding-right: 2px;
+                padding-left: 2px;
+                font-size: 0.6rem;
+            }
+
+            .equalizer-value {
+                font-size: 0.62rem;
             }
 
             .transport > h1 {
@@ -1564,6 +1854,32 @@
             <a class="patch-editor-link" href="https://composer.planetbiru.com/instrument-creator/" target="_blank" rel="noopener noreferrer">
                 Create Your Own <span aria-hidden="true">↗</span>
             </a>
+        </div>
+    </div>
+
+    <div class="panel equalizer-panel">
+        <div class="equalizer-header">
+            <div>
+                <h3>Graphic Equalizer</h3>
+                <p class="equalizer-help">Applies to realtime playback and offline WAV rendering.</p>
+            </div>
+            <div class="equalizer-actions">
+                <label class="equalizer-toggle" for="equalizerEnabled">
+                    <input type="checkbox" id="equalizerEnabled">
+                    Enabled
+                </label>
+                <button class="equalizer-reset" id="equalizerReset" type="button">Flat</button>
+            </div>
+        </div>
+        <div class="equalizer-control-layout">
+            <div class="equalizer-scale" aria-hidden="true">
+                <span>+12</span>
+                <span>+6</span>
+                <span>0</span>
+                <span>-6</span>
+                <span>-12</span>
+            </div>
+            <div class="equalizer-bands" id="equalizerBands" aria-label="Graphic equalizer bands"></div>
         </div>
     </div>
 
@@ -2122,14 +2438,107 @@
                 drumPadGrid.appendChild(button);
             });
             const drumPadButtons = document.querySelectorAll('.drum-pad');
+            const equalizerEnabled = document.getElementById('equalizerEnabled');
+            const equalizerStorageKey = 'timidityPlayerGraphicEqualizerEnabled';
+            const equalizerBandsStorageKey = 'timidityPlayerGraphicEqualizerBands';
+            let savedEqualizerBands = null;
+            let hasSavedEqualizerBands = false;
+            try {
+                equalizerEnabled.checked = window.localStorage.getItem(equalizerStorageKey) === 'true';
+                const storedBands = window.localStorage.getItem(equalizerBandsStorageKey);
+                if (storedBands !== null) {
+                    savedEqualizerBands = JSON.parse(storedBands);
+                    hasSavedEqualizerBands = true;
+                }
+            } catch (error) {
+                statusEl.textContent = `Unable to load graphic equalizer preferences: ${error.message}`;
+            }
 
             player = new TimidityPlayer({ patchUrlBase: patchUrlBase, buffserSize: 512 });
+            if (hasSavedEqualizerBands) {
+                try {
+                    player.setGraphicEqualizerBands(savedEqualizerBands);
+                } catch (error) {
+                    statusEl.textContent = `Unable to load graphic equalizer bands: ${error.message}`;
+                }
+            }
+            player.setGraphicEqualizer(equalizerEnabled.checked);
             player.on('onInit', () => {
                 drumPadButtons.forEach((button) => {
                     button.disabled = false;
                 });
             });
             player.init();
+
+            const equalizerBandsContainer = document.getElementById('equalizerBands');
+            const equalizerReset = document.getElementById('equalizerReset');
+            const equalizerBandControls = [];
+            const saveEqualizerBands = () => {
+                const bandsByFrequency = {};
+                player.getGraphicEqualizerBands().forEach((band) => {
+                    bandsByFrequency[band.frequency] = { gain: band.gain, q: band.q };
+                });
+                try {
+                    window.localStorage.setItem(equalizerBandsStorageKey, JSON.stringify(bandsByFrequency));
+                } catch (error) {
+                    statusEl.textContent = `Unable to save graphic equalizer bands: ${error.message}`;
+                }
+            };
+            const formatFrequency = (frequency) => frequency >= 1000
+                ? `${frequency / 1000} kHz`
+                : `${frequency} Hz`;
+            const formatEqualizerGain = (gain) => `${gain > 0 ? '+' : ''}${gain} dB`;
+
+            player.getGraphicEqualizerBands().forEach((band, index) => {
+                const control = document.createElement('div');
+                control.className = 'equalizer-band';
+                control.innerHTML = `
+                    <button class="equalizer-frequency" type="button"
+                        aria-label="Reset ${formatFrequency(band.frequency)} band to 0 dB">
+                        ${formatFrequency(band.frequency)}
+                    </button>
+                    <input class="equalizer-slider" type="range" min="-12" max="12" step="0.5"
+                        value="${band.gain}" aria-label="${formatFrequency(band.frequency)} gain">
+                    <output class="equalizer-value">${formatEqualizerGain(band.gain)}</output>
+                `;
+                const slider = control.querySelector('input');
+                const frequencyButton = control.querySelector('.equalizer-frequency');
+                const value = control.querySelector('output');
+                slider.addEventListener('input', () => {
+                    const gain = Number(slider.value);
+                    value.textContent = formatEqualizerGain(gain);
+                    player.setGraphicEqualizerBand(index, gain);
+                    saveEqualizerBands();
+                });
+                frequencyButton.addEventListener('click', () => {
+                    slider.value = '0';
+                    value.textContent = formatEqualizerGain(0);
+                    player.setGraphicEqualizerBand(index, 0);
+                    saveEqualizerBands();
+                });
+                equalizerBandsContainer.appendChild(control);
+                equalizerBandControls.push({ slider, value });
+            });
+
+            equalizerEnabled.addEventListener('change', () => {
+                player.setGraphicEqualizer(equalizerEnabled.checked);
+                try {
+                    window.localStorage.setItem(equalizerStorageKey, String(equalizerEnabled.checked));
+                } catch (error) {
+                    statusEl.textContent = `Unable to save graphic equalizer setting: ${error.message}`;
+                }
+            });
+
+            equalizerReset.addEventListener('click', () => {
+                const bands = player.getGraphicEqualizerBands().map((band, index) => {
+                    equalizerBandControls[index].slider.value = '0';
+                    equalizerBandControls[index].value.textContent = formatEqualizerGain(0);
+                    return { ...band, gain: 0 };
+                });
+                player.setGraphicEqualizerBands(bands);
+                saveEqualizerBands();
+            });
+
             drumPadButtons.forEach((button) => {
                 button.addEventListener('click', async () => {
                     const pitch = Number(button.dataset.note);

@@ -58,6 +58,23 @@ class TimidityPlayer {
         this.Module = Module;
         this.audioContext = null;
         this.scriptNode = null;
+        this.graphicEqualizerEnabled = false;
+        this.graphicEqualizerBands = [
+            { frequency: 32, gain: 0, q: 1.1 },
+            { frequency: 64, gain: 0, q: 1.1 },
+            { frequency: 125, gain: 0, q: 1.1 },
+            { frequency: 250, gain: 0, q: 1.1 },
+            { frequency: 500, gain: 0, q: 1.1 },
+            { frequency: 1000, gain: 0, q: 1.1 },
+            { frequency: 2000, gain: 0, q: 1.1 },
+            { frequency: 4000, gain: 0, q: 1.1 },
+            { frequency: 8000, gain: 0, q: 1.1 },
+            { frequency: 16000, gain: 0, q: 1.1 },
+        ];
+        this.graphicEqualizerFilters = [];
+        this.graphicEqualizerInput = null;
+        this.graphicEqualizerOutput = null;
+        this.graphicEqualizerExternalOutput = null;
         this.audioBufferPtr = 0;
         this.audioBufferCapacity = 0;
         this.songPtr = 0; // Pointer to the C MidSong object
@@ -739,7 +756,8 @@ class TimidityPlayer {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         this.audioContext = offline ? new OfflineAudioContext(2, this.sampleRate * 60, this.sampleRate) : new AudioContextClass({ sampleRate: this.sampleRate });
         this.gainNode = this.audioContext.createGain();
-        this.gainNode.connect(this.audioContext.destination);
+        this._initializeGraphicEqualizer();
+        this._routeGraphicEqualizer();
         if (!offline) {
             this.audioContext.suspend();
         }
@@ -1264,6 +1282,262 @@ class TimidityPlayer {
     }
 
     /**
+     * Initializes the optional 10-band graphic equalizer chain.
+     * It is not connected to the output when disabled.
+     */
+    _initializeGraphicEqualizer() {
+        if (!this.audioContext) return;
+        for (const filter of this.graphicEqualizerFilters) filter.disconnect();
+        const chain = this._createGraphicEqualizerChain(this.audioContext, this.sampleRate);
+        this.graphicEqualizerFilters = chain.filters;
+        this.graphicEqualizerInput = chain.input;
+        this.graphicEqualizerOutput = chain.output;
+    }
+
+    _createGraphicEqualizerChain(audioContext, sampleRate) {
+        const filters = [];
+        let previous = null;
+        for (const band of this.graphicEqualizerBands) {
+            const filter = audioContext.createBiquadFilter();
+            filter.type = 'peaking';
+            filter.frequency.value = Math.max(20, Math.min(sampleRate * 0.49, band.frequency));
+            filter.Q.value = Math.max(0.1, band.q == null ? 1.1 : band.q);
+            filter.gain.value = this.graphicEqualizerEnabled
+                ? Math.max(-12, Math.min(12, band.gain || 0))
+                : 0;
+            if (previous) previous.connect(filter);
+            previous = filter;
+            filters.push(filter);
+        }
+        return {
+            filters,
+            input: filters[0] || null,
+            output: filters[filters.length - 1] || null,
+        };
+    }
+
+    _routeGraphicEqualizer() {
+        if (!this.gainNode) return;
+        if (this.graphicEqualizerExternalOutput) {
+            this.graphicEqualizerExternalOutput.disconnect();
+            if (this.graphicEqualizerEnabled && this.graphicEqualizerInput) {
+                this.graphicEqualizerExternalOutput.connect(this.graphicEqualizerInput);
+            } else {
+                this.graphicEqualizerExternalOutput.connect(this.audioContext.destination);
+            }
+            return;
+        }
+        this.gainNode.disconnect();
+        if (this.graphicEqualizerEnabled && this.graphicEqualizerInput) {
+            this.gainNode.connect(this.graphicEqualizerInput);
+            this.graphicEqualizerOutput.connect(this.audioContext.destination);
+        } else {
+            this.gainNode.connect(this.audioContext.destination);
+        }
+    }
+
+    /**
+     * Enables or disables the graphic equalizer.
+     * @param {boolean} enabled - Whether equalizer processing is enabled.
+     */
+    setGraphicEqualizerEnabled(enabled) {
+        this.graphicEqualizerEnabled = enabled === true;
+        if (this.graphicEqualizerEnabled) {
+            for (let i = 0; i < this.graphicEqualizerFilters.length; i++) {
+                const band = this.graphicEqualizerBands[i];
+                this.graphicEqualizerFilters[i].gain.value =
+                    Math.max(-12, Math.min(12, band.gain || 0));
+            }
+        } else {
+            for (const filter of this.graphicEqualizerFilters) filter.gain.value = 0;
+        }
+        this._routeGraphicEqualizer();
+    }
+
+    /**
+     * Updates one or more equalizer bands.
+     * @param {Array<number|Object>|Object} bands - Positional gain array, explicit band-object array, or map keyed by frequency in Hz.
+     */
+    setGraphicEqualizerBands(bands) {
+        if (!bands || typeof bands !== 'object') {
+            throw new TypeError('Graphic equalizer bands must be a non-empty array or frequency map.');
+        }
+
+        const updates = [];
+        if (Array.isArray(bands)) {
+            if (bands.length === 0) {
+                throw new TypeError('Graphic equalizer bands must be a non-empty array or frequency map.');
+            }
+            bands.forEach((band, index) => {
+                if (band === undefined) return;
+                let targetIndex = index;
+                if (band && typeof band === 'object' && Number.isFinite(band.frequency)) {
+                    targetIndex = this.graphicEqualizerBands.findIndex(
+                        existing => existing.frequency === band.frequency
+                    );
+                    if (targetIndex === -1) {
+                        throw new RangeError(`Unsupported graphic equalizer frequency: ${band.frequency} Hz.`);
+                    }
+                }
+                updates.push({ targetIndex, band });
+            });
+        } else {
+            const entries = Object.entries(bands);
+            if (entries.length === 0) {
+                throw new TypeError('Graphic equalizer bands must be a non-empty array or frequency map.');
+            }
+            for (const [frequencyKey, value] of entries) {
+                const frequency = Number(frequencyKey);
+                if (!Number.isFinite(frequency)) {
+                    throw new TypeError(`Invalid graphic equalizer frequency: ${frequencyKey}.`);
+                }
+                const targetIndex = this.graphicEqualizerBands.findIndex(
+                    existing => existing.frequency === frequency
+                );
+                if (targetIndex === -1) {
+                    throw new RangeError(`Unsupported graphic equalizer frequency: ${frequency} Hz.`);
+                }
+                if (typeof value !== 'number' && (!value || typeof value !== 'object' || Array.isArray(value))) {
+                    throw new TypeError('Each frequency-map value must be a gain number or a band object.');
+                }
+                if (value && typeof value === 'object' && value.frequency !== undefined &&
+                    value.frequency !== frequency) {
+                    throw new TypeError(`Band frequency ${value.frequency} Hz does not match map key ${frequency} Hz.`);
+                }
+                if (typeof value === 'number' && !Number.isFinite(value)) {
+                    throw new TypeError(`Graphic equalizer gain for ${frequency} Hz must be finite.`);
+                }
+                updates.push({
+                    targetIndex,
+                    band: typeof value === 'number' ? { frequency, gain: value } : { ...value, frequency },
+                });
+            }
+        }
+        if (updates.length === 0) {
+            throw new TypeError('Graphic equalizer bands must contain at least one band.');
+        }
+
+        const updatedBands = this.graphicEqualizerBands.map(existing => ({...existing}));
+        const updatedIndices = new Set();
+        for (const { targetIndex, band } of updates) {
+            if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= updatedBands.length) {
+                throw new RangeError(`Graphic equalizer band index must be from 0 to ${updatedBands.length - 1}.`);
+            }
+            if (updatedIndices.has(targetIndex)) {
+                throw new TypeError(`Graphic equalizer frequency ${updatedBands[targetIndex].frequency} Hz was specified more than once.`);
+            }
+            updatedIndices.add(targetIndex);
+            const existing = updatedBands[targetIndex];
+            if (typeof band === 'number') {
+                if (!Number.isFinite(band)) {
+                    throw new TypeError('Graphic equalizer gain must be finite.');
+                }
+                updatedBands[targetIndex] = {
+                    ...existing,
+                    gain: Math.max(-12, Math.min(12, band)),
+                };
+                continue;
+            }
+            if (!band || typeof band !== 'object' || Array.isArray(band)) {
+                throw new TypeError('Each graphic equalizer band must be a number or an object.');
+            }
+            updatedBands[targetIndex] = {
+                frequency: Number.isFinite(band.frequency) ? band.frequency : existing.frequency,
+                gain: Number.isFinite(band.gain)
+                    ? Math.max(-12, Math.min(12, band.gain))
+                    : 0,
+                q: Number.isFinite(band.q) ? Math.max(0.1, band.q) : (existing.q || 1.1),
+            };
+        }
+        this.graphicEqualizerBands = updatedBands;
+        if (this.audioContext && this.graphicEqualizerFilters.length) {
+            for (let i = 0; i < this.graphicEqualizerFilters.length; i++) {
+                const band = updatedBands[i];
+                const filter = this.graphicEqualizerFilters[i];
+                filter.frequency.value = Math.max(20, Math.min(this.sampleRate * 0.49, band.frequency));
+                filter.Q.value = Math.max(0.1, band.q == null ? 1.1 : band.q);
+                filter.gain.value = this.graphicEqualizerEnabled
+                    ? Math.max(-12, Math.min(12, band.gain || 0))
+                    : 0;
+            }
+        }
+    }
+
+    /**
+     * Sets the gain of one equalizer band by its index.
+     * @param {number} index - Band index from 0 to 9.
+     * @param {number} gain - Gain in dB, clamped to -12..+12.
+     */
+    setGraphicEqualizerBand(index, gain) {
+        if (!Number.isInteger(index) || index < 0 || index >= this.graphicEqualizerBands.length) {
+            throw new RangeError(`Graphic equalizer band index must be from 0 to ${this.graphicEqualizerBands.length - 1}.`);
+        }
+        if (!Number.isFinite(gain)) throw new TypeError('Graphic equalizer gain must be finite.');
+        const bands = this.graphicEqualizerBands.map(band => ({...band}));
+        bands[index].gain = Math.max(-12, Math.min(12, gain));
+        this.setGraphicEqualizerBands(bands);
+    }
+
+    /**
+     * Enables or disables the equalizer and optionally updates its bands.
+     * @param {boolean} enabled
+     * @param {Array<number|Object>|Object} [bands] - Gains by index or explicit frequency.
+     */
+    setGraphicEqualizer(enabled, bands) {
+        if (typeof enabled !== 'boolean') {
+            throw new TypeError('Graphic equalizer enabled state must be a boolean.');
+        }
+        if (bands !== undefined) this.setGraphicEqualizerBands(bands);
+        this.setGraphicEqualizerEnabled(enabled);
+    }
+
+    /**
+     * Gets a copy of the current equalizer band settings.
+     * @returns {Array<{frequency: number, gain: number, q: number}>}
+     */
+    getGraphicEqualizerBands() {
+        return this.graphicEqualizerBands.map(band => ({...band}));
+    }
+
+    /**
+     * Gets whether equalizer processing is enabled.
+     * @returns {boolean}
+     */
+    isGraphicEqualizerEnabled() {
+        return this.graphicEqualizerEnabled;
+    }
+
+    /**
+     * Routes an external audio node through the equalizer/output path.
+     * Disconnects the node's existing outgoing connections before routing it.
+     * @param {AudioNode|null} outputNode - Node in this player's AudioContext, or null to restore internal routing.
+     */
+    setGraphicEqualizerOutputNode(outputNode) {
+        this.graphicEqualizerExternalOutput = outputNode || null;
+        this._routeGraphicEqualizer();
+    }
+
+    /**
+     * Gets the configured external equalizer/output node.
+     * @returns {AudioNode|null} The configured node, or null when internal routing is used.
+     */
+    getGraphicEqualizerOutputNode() {
+        return this.graphicEqualizerExternalOutput;
+    }
+
+    /**
+     * Creates fresh, flat settings for the default 10 equalizer frequencies.
+     * @returns {Array<{frequency: number, gain: number, q: number}>}
+     */
+    getGraphicEqualizerDefaultBands() {
+        return [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map(freq => ({
+            frequency: freq,
+            gain: 0,
+            q: 1.1
+        }));
+    }
+
+    /**
      * Applies mute/solo logic to all channels, only updating channels whose state has changed.
      * This prevents unnecessary calls to the C function, reducing audio glitches.
      * @param {Array<Object>} tracksData - The array of all track data objects.
@@ -1461,8 +1735,6 @@ class TimidityPlayer {
             panner = offlineCtx.createPanner();
             panner.panningModel = 'HRTF';
             panner.distanceModel = 'inverse';
-            panner.connect(offlineCtx.destination);
-
             // Initial center position
             panner.positionX.setValueAtTime(0, 0);
             panner.positionY.setValueAtTime(0, 0);
@@ -1523,15 +1795,16 @@ class TimidityPlayer {
                         }
 
                         // Determine if we need OfflineAudioContext processing
-                        const requiresWebAudio = (isSpatial && offlineCtx) || monoToStereo;
+                        const requiresWebAudio = (isSpatial && offlineCtx) || monoToStereo || this.graphicEqualizerEnabled;
 
                         if (requiresWebAudio) {
                             // Pindahkan audio dari raw chunks ke Web Audio Buffer
                             if (!offlineCtx) {
-                                offlineCtx = new OfflineAudioContext(2, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
-                                spatialBufferArray = offlineCtx.createBuffer(2, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
+                                const outputChannels = isSpatial || monoToStereo ? 2 : channels;
+                                offlineCtx = new OfflineAudioContext(outputChannels, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
+                                spatialBufferArray = offlineCtx.createBuffer(outputChannels, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
                                 spatialChannelDataL = spatialBufferArray.getChannelData(0);
-                                spatialChannelDataR = spatialBufferArray.getChannelData(1);
+                                spatialChannelDataR = outputChannels > 1 ? spatialBufferArray.getChannelData(1) : null;
                             }
 
                             let localOffset = 0;
@@ -1540,7 +1813,9 @@ class TimidityPlayer {
                                 const frameCount = chk.length / channels;
                                 for (let j = 0; j < frameCount; j++) {
                                     spatialChannelDataL[localOffset + j] = chk[j * channels] / 32768.0;
-                                    spatialChannelDataR[localOffset + j] = chk[j * channels + (channels === 2 ? 1 : 0)] / 32768.0;
+                                    if (spatialChannelDataR) {
+                                        spatialChannelDataR[localOffset + j] = chk[j * channels + (channels === 2 ? 1 : 0)] / 32768.0;
+                                    }
                                 }
                                 localOffset += frameCount;
                             }
@@ -1624,10 +1899,17 @@ class TimidityPlayer {
                                 }
 
                                 lastNode.connect(panner);
-                                panner.connect(offlineCtx.destination);
-                            } else {
-                                lastNode.connect(offlineCtx.destination);
+                                lastNode = panner;
                             }
+
+                            if (this.graphicEqualizerEnabled) {
+                                const equalizer = this._createGraphicEqualizerChain(offlineCtx, sampleRate);
+                                if (equalizer.input) {
+                                    lastNode.connect(equalizer.input);
+                                    lastNode = equalizer.output;
+                                }
+                            }
+                            lastNode.connect(offlineCtx.destination);
 
                             offlineCtx.startRendering().then(renderedBuffer => {
                                 const wavBlob = this.audioBufferToWav(renderedBuffer);
@@ -2260,17 +2542,12 @@ class TimidityPlayer {
      * @returns {Blob} The generated WAV file as a Blob.
      */
     audioBufferToWav(buffer) {
-        // Implementation from: https://github.com/mattdiamond/Recorderjs
-        function interleave(inputL, inputR) {
-            let length = inputL.length + inputR.length;
-            let result = new Float32Array(length);
-            let index = 0, inputIndex = 0;
-            while (index < length) {
-                result[index++] = inputL[inputIndex];
-                result[index++] = inputR[inputIndex];
-                inputIndex++;
+        const channels = buffer.numberOfChannels;
+        const interleaved = new Float32Array(buffer.length * channels);
+        for (let frame = 0; frame < buffer.length; frame++) {
+            for (let channel = 0; channel < channels; channel++) {
+                interleaved[frame * channels + channel] = buffer.getChannelData(channel)[frame];
             }
-            return result;
         }
 
         function floatTo16BitPCM(output, offset, input) {
@@ -2286,7 +2563,6 @@ class TimidityPlayer {
             }
         }
 
-        const interleaved = interleave(buffer.getChannelData(0), buffer.getChannelData(1));
         const dataView = new DataView(new ArrayBuffer(44 + interleaved.length * 2));
 
         writeString(dataView, 0, 'RIFF');
@@ -2295,10 +2571,10 @@ class TimidityPlayer {
         writeString(dataView, 12, 'fmt ');
         dataView.setUint32(16, 16, true);
         dataView.setUint16(20, 1, true);
-        dataView.setUint16(22, 2, true);
+        dataView.setUint16(22, channels, true);
         dataView.setUint32(24, buffer.sampleRate, true);
-        dataView.setUint32(28, buffer.sampleRate * 4, true);
-        dataView.setUint16(32, 4, true);
+        dataView.setUint32(28, buffer.sampleRate * channels * 2, true);
+        dataView.setUint16(32, channels * 2, true);
         dataView.setUint16(34, 16, true);
         writeString(dataView, 36, 'data');
         dataView.setUint32(40, interleaved.length * 2, true);
