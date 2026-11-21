@@ -92,7 +92,8 @@ class TimidityPlayer {
         this.ME_RESET_CONTROLLERS   = 13;
         this.ME_ALL_NOTES_OFF       = 14;
         this.ME_TONE_BANK           = 15;
-        this.ME_CONTROL_CHANGE      = 16;
+        this.ME_LYRIC               = 16;
+        this.ME_CONTROL_CHANGE      = 17;
 
         // If the WebAssembly module has already finished initializing, set up the C bindings immediately.
         if (this.Module.timidityReady) {
