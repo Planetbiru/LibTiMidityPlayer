@@ -312,6 +312,47 @@ Sets the master volume of the loaded song.
 - **Parameters:**
   - `volume` *(number)*: The volume level (0 to 100).
 
+### Graphic equalizer
+The optional 10-band graphic equalizer can be changed during realtime playback. The same enabled state and band settings are also applied when `renderOffline()` creates the WAV output.
+
+```javascript
+player.setGraphicEqualizer(true, {
+  32: { gain: 3, q: 1.1 },
+  64: { gain: 2, q: 1.1 },
+  125: { gain: 1, q: 1.1 },
+  250: { gain: 0, q: 1.1 },
+  500: { gain: 0, q: 1.1 },
+  1000: { gain: 0, q: 1.1 },
+  2000: { gain: 1, q: 1.1 },
+  4000: { gain: 2, q: 1.1 },
+  8000: { gain: 3, q: 1.1 },
+  16000: { gain: 3, q: 1.1 }
+});
+const wav = await player.renderOffline();
+```
+
+- `setGraphicEqualizer(enabled, bands)` enables or disables the equalizer and optionally updates its bands. Prefer a frequency map (`{ 32: gain, 64: gain, ... }`) so each value is tied to an explicit frequency. Values may also be objects with `gain` and `q`.
+- `setGraphicEqualizerEnabled(enabled)` changes only the enabled state.
+- `setGraphicEqualizerBands(bands)` accepts a frequency map or an array of band objects with explicit `frequency`, `gain`, and optional `q`. Arrays of gain numbers remain supported for backward compatibility, but map each value by array position.
+- `setGraphicEqualizerBand(index, gain)` changes one band's gain.
+- `getGraphicEqualizerBands()` returns a copy of the current band settings.
+- `isGraphicEqualizerEnabled()` returns whether processing is enabled.
+- `getGraphicEqualizerDefaultBands()` returns a new array of the default 10 bands: 32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, and 16000 Hz. Each band has `gain: 0` and `q: 1.1`.
+- `setGraphicEqualizerOutputNode(outputNode)` routes an external `AudioNode` through the equalizer when enabled, or directly to the audio destination when disabled. Its existing outgoing connections are disconnected. Pass `null` to restore routing from the player's internal gain node.
+- `getGraphicEqualizerOutputNode()` returns the configured external `AudioNode`, or `null` when the internal gain node is used.
+
+```javascript
+const bands = player.getGraphicEqualizerDefaultBands();
+player.setGraphicEqualizerBands(bands);
+
+// Optional custom routing from an AudioNode in the player's AudioContext:
+player.setGraphicEqualizerOutputNode(sourceNode);
+console.log(player.getGraphicEqualizerOutputNode());
+player.setGraphicEqualizerOutputNode(null); // Restore internal routing
+```
+
+Gain is clamped to -12..+12 dB. Offline rendering uses the current equalizer configuration; disabling it preserves the existing unfiltered render path.
+
 ### `setTranspose(semitones)`
 Sets the global pitch transpose.
 - **Parameters:**
