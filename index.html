@@ -1098,7 +1098,7 @@
 
         .drum-pad-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(95px, 1fr));
             gap: 9px;
         }
 
@@ -1131,13 +1131,7 @@
 
         .drum-pad-icon {
             display: grid;
-            width: 36px;
-            height: 36px;
-            flex: 0 0 36px;
             place-items: center;
-            border: 1px solid #355064;
-            border-radius: 10px;
-            background: #101923;
             color: var(--accent-color);
         }
 
@@ -1167,11 +1161,12 @@
             color: #8b9bad;
             font-size: 0.67rem;
             font-variant-numeric: tabular-nums;
+            white-space: nowrap;
         }
 
         .mixer-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 10px;
             padding: 5px 2px 12px;
             overflow: visible;
@@ -1806,6 +1801,12 @@
 
         let player;
         const drumPads = [
+            { name: 'Snare Roll', pitch: 25, icon: DRUM_ICON_SET.snare },
+            { name: 'Snap', pitch: 26, icon: DRUM_ICON_SET.snap },
+            { name: 'High Q', pitch: 27, icon: DRUM_ICON_SET.woodblock },
+            { name: 'Slap', pitch: 28, icon: DRUM_ICON_SET.slap },
+            { name: 'Scratch Push', pitch: 29, icon: DRUM_ICON_SET.scratchpush },
+            { name: 'Scratch Pull', pitch: 30, icon: DRUM_ICON_SET.scratchpull },
             { name: 'Sticks', pitch: 31, icon: DRUM_ICON_SET.drumstrick },
             { name: 'Metronome Click', pitch: 33, icon: DRUM_ICON_SET.metronome },
             { name: 'Metronome Bell', pitch: 34, icon: DRUM_ICON_SET.metronome },
@@ -1844,9 +1845,25 @@
             { name: 'Agogo Low', pitch: 68, icon: DRUM_ICON_SET.agogo },
             { name: 'Woodblock H', pitch: 76, icon: DRUM_ICON_SET.woodblock },
             { name: 'Woodblock L', pitch: 77, icon: DRUM_ICON_SET.woodblock },
+            { name: 'Cuica Mute', pitch: 78, icon: DRUM_ICON_SET.cuica },
+            { name: 'Cuica Open', pitch: 79, icon: DRUM_ICON_SET.cuica },
+            { name: 'Cuica Open 2', pitch: 83, icon: DRUM_ICON_SET.cuica },
+
+            // 71 - 74
+            { name: 'Short Whistle', pitch: 71, icon: MIDI_ICONS.whistle },
+            { name: 'Long Whistle', pitch: 72, icon: MIDI_ICONS.whistle },
+            { name: 'Short Guiro', pitch: 73, icon: DRUM_ICON_SET.guiro },
+            { name: 'Long Guiro', pitch: 74, icon: DRUM_ICON_SET.guiro },
+
+
+            { name: 'Triangle C', pitch: 75, icon: DRUM_ICON_SET.triangle },
             { name: 'Triangle O', pitch: 81, icon: DRUM_ICON_SET.triangle },
             { name: 'Triangle M', pitch: 80, icon: DRUM_ICON_SET.triangle },
-            { name: 'Shaker', pitch: 82, icon: DRUM_ICON_SET.maracas }
+            { name: 'Shaker', pitch: 82, icon: DRUM_ICON_SET.maracas },
+            { name: 'Bell Tree', pitch: 84, icon: DRUM_ICON_SET.belltree },
+            { name: 'Castanets', pitch: 85, icon: DRUM_ICON_SET.castanets },
+            { name: 'Mute Surdo', pitch: 86, icon: DRUM_ICON_SET.tom },
+            { name: 'Open Surdo', pitch: 87, icon: DRUM_ICON_SET.tom },
         ];
 
         // --- Main Application Logic ---
