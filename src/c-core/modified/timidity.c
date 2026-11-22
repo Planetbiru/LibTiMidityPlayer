@@ -565,6 +565,8 @@ static void do_song_load(MidIStream *stream, MidSongOptions *options, MidSong **
   if (!song->resample_buffer) goto fail;
   song->common_buffer = (sint32 *) timi_malloc(options->buffer_size * 2 * sizeof(sint32));
   if (!song->common_buffer) goto fail;
+  song->channel_buffer = (sint32 *) timi_malloc(options->buffer_size * 2 * sizeof(sint32));
+  if (!song->channel_buffer) goto fail;
 
   song->bytes_per_sample = 2;
   if (song->encoding & PE_16BIT)
@@ -669,6 +671,8 @@ void mid_song_free(MidSong *song)
   }
 
   mid_song_free_effects(song);
+  timi_free(song->channel_buffer);
+  song->channel_buffer = NULL;
   timi_free(song->common_buffer);
   timi_free(song->resample_buffer);
   timi_free(song->events);

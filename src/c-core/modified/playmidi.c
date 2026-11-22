@@ -98,6 +98,12 @@ static void reset_controllers(MidSong *song, int c)
   song->channel[c].pitchfactor=0; /* to be computed */
   song->channel[c].reverb_send=0;
   song->channel[c].chorus_send=0;
+  song->channel[c].brightness=0;
+  song->channel[c].bass=0;
+  song->brightness_lowpass[c][0]=0.0f;
+  song->brightness_lowpass[c][1]=0.0f;
+  song->bass_lowpass[c][0]=0.0f;
+  song->bass_lowpass[c][1]=0.0f;
   if (clear_effects)
     clear_channel_effect_buffers(song, c, 1, 1);
   song->channel_effect_tail_remaining[c] = 0;
@@ -242,8 +248,7 @@ void mid_song_free_effects(MidSong *song)
       song->chorus_phase[channel] = 0.0;
       song->channel_effect_tail_remaining[channel] = 0;
     }
-  timi_free(song->channel_buffer);
-  song->channel_buffer = NULL;
+  /* channel_buffer is a core scratch buffer owned by MidSong. */
   song->chorus_buffer_length = 0;
   song->effect_tail_remaining = 0;
 }
@@ -324,6 +329,34 @@ int mid_song_set_channel_chorus(MidSong *song, int channel, int chorus)
                                      chorus);
 }
 
+int mid_song_set_channel_brightness(MidSong *song, int channel, int brightness)
+{
+  if (!song || channel < 0 || channel >= 16 ||
+      brightness < 0 || brightness > 127)
+    return 0;
+  song->channel[channel].brightness = brightness;
+  if (brightness == 0)
+    {
+      song->brightness_lowpass[channel][0] = 0.0f;
+      song->brightness_lowpass[channel][1] = 0.0f;
+    }
+  return 1;
+}
+
+int mid_song_set_channel_bass(MidSong *song, int channel, int bass)
+{
+  if (!song || channel < 0 || channel >= 16 ||
+      bass < 0 || bass > 127)
+    return 0;
+  song->channel[channel].bass = bass;
+  if (bass == 0)
+    {
+      song->bass_lowpass[channel][0] = 0.0f;
+      song->bass_lowpass[channel][1] = 0.0f;
+    }
+  return 1;
+}
+
 int mid_song_set_effects(MidSong *song, int reverb, int chorus)
 {
   int channel;
@@ -337,6 +370,83 @@ int mid_song_set_effects(MidSong *song, int reverb, int chorus)
     if (!mid_song_set_channel_effects(song, channel, reverb, chorus))
       return 0;
   return 1;
+}
+
+static void process_channel_brightness(MidSong *song, int midi_channel,
+                                       sint32 *buffer, sint32 count, int channels)
+{
+  MidChannel *state = &song->channel[midi_channel];
+  int brightness = state->brightness;
+  sint32 frame;
+
+  if (brightness == 0)
+    return;
+
+  {
+    const float alpha = 1.0f -
+      (float)exp(-6.28318530717958647692 * 220.0 / song->rate);
+    float tone_gain;
+    int side;
+
+    tone_gain = brightness * (0.65f / 127.0f);
+
+    for (frame = 0; frame < count; frame++)
+      {
+        for (side = 0; side < channels; side++)
+          {
+            float dry = (float)buffer[frame * channels + side];
+            float lowpass =
+              song->brightness_lowpass[midi_channel][side] +
+              alpha * (dry - song->brightness_lowpass[midi_channel][side]);
+            float processed;
+
+            song->brightness_lowpass[midi_channel][side] = lowpass;
+            processed = dry + tone_gain * (dry - lowpass);
+
+            if (processed > 2147483647.0f)
+              processed = 2147483647.0f;
+            else if (processed < -2147483648.0f)
+              processed = -2147483648.0f;
+            buffer[frame * channels + side] = (sint32)processed;
+          }
+      }
+  }
+}
+
+static void process_channel_bass(MidSong *song, int midi_channel,
+                                 sint32 *buffer, sint32 count, int channels)
+{
+  int bass = song->channel[midi_channel].bass;
+  sint32 frame;
+  int side;
+
+  if (bass == 0)
+    return;
+
+  {
+    const float alpha = 1.0f -
+      (float)exp(-6.28318530717958647692 * 220.0 / song->rate);
+    float bass_gain = bass * (0.75f / 127.0f);
+
+    for (frame = 0; frame < count; frame++)
+      {
+        for (side = 0; side < channels; side++)
+          {
+            float dry = (float)buffer[frame * channels + side];
+            float lowpass =
+              song->bass_lowpass[midi_channel][side] +
+              alpha * (dry - song->bass_lowpass[midi_channel][side]);
+            float processed = dry + bass_gain * lowpass;
+
+            song->bass_lowpass[midi_channel][side] = lowpass;
+            if (processed > 2147483647.0f)
+              processed = 2147483647.0f;
+            else if (processed < -2147483648.0f)
+              processed = -2147483648.0f;
+            buffer[frame * channels + side] = (sint32)processed;
+          }
+      }
+  }
 }
 
 static float chorus_lfo_value(MidSong *song, int channel)
@@ -1023,6 +1133,16 @@ static void seek_forward(MidSong *song, sint32 until_time)
 	                              song->current_event->a);
 	  break;
 
+	case ME_BRIGHTNESS:
+	  mid_song_set_channel_brightness(song, song->current_event->channel,
+	                                  song->current_event->a);
+	  break;
+
+	case ME_BASS:
+	  mid_song_set_channel_bass(song, song->current_event->channel,
+	                            song->current_event->a);
+	  break;
+
 	case ME_RESET_CONTROLLERS:
 	  reset_controllers(song, song->current_event->channel);
 	  break;
@@ -1071,10 +1191,35 @@ static void do_compute_data(MidSong *song, sint32 count)
 
   if (!any_effect_send)
     {
-      for (i = 0; i < song->voices; i++)
+      for (channel = 0; channel < 16; channel++)
         {
-          if(song->voice[i].status != VOICE_FREE)
-            mix_voice(song, song->common_buffer, i, count);
+          if (song->channel[channel].brightness == 0 &&
+              song->channel[channel].bass == 0)
+            {
+              for (i = 0; i < song->voices; i++)
+                if (song->voice[i].status != VOICE_FREE &&
+                    song->voice[i].channel == channel)
+                  mix_voice(song, song->common_buffer, i, count);
+            }
+          else
+            {
+              sint32 sample_count = count * audio_channels;
+              memset(song->channel_buffer, 0,
+                     sample_count * sizeof(sint32));
+              for (i = 0; i < song->voices; i++)
+                if (song->voice[i].status != VOICE_FREE &&
+                    song->voice[i].channel == channel)
+                  mix_voice(song, song->channel_buffer, i, count);
+              process_channel_brightness(song, channel,
+                                         song->channel_buffer, count,
+                                         audio_channels);
+              if (song->channel[channel].bass > 0)
+                process_channel_bass(song, channel,
+                                     song->channel_buffer, count,
+                                     audio_channels);
+              for (i = 0; i < sample_count; i++)
+                song->common_buffer[i] += song->channel_buffer[i];
+            }
         }
     }
   else
@@ -1084,10 +1229,33 @@ static void do_compute_data(MidSong *song, sint32 count)
           if (!song->channel[channel].reverb_send &&
               !song->channel[channel].chorus_send)
             {
-              for (i = 0; i < song->voices; i++)
-                if (song->voice[i].status != VOICE_FREE &&
-                    song->voice[i].channel == channel)
-                  mix_voice(song, song->common_buffer, i, count);
+              if (song->channel[channel].brightness == 0 &&
+                  song->channel[channel].bass == 0)
+                {
+                  for (i = 0; i < song->voices; i++)
+                    if (song->voice[i].status != VOICE_FREE &&
+                        song->voice[i].channel == channel)
+                      mix_voice(song, song->common_buffer, i, count);
+                }
+              else
+                {
+                  sint32 sample_count = count * audio_channels;
+                  memset(song->channel_buffer, 0,
+                         sample_count * sizeof(sint32));
+                  for (i = 0; i < song->voices; i++)
+                    if (song->voice[i].status != VOICE_FREE &&
+                        song->voice[i].channel == channel)
+                      mix_voice(song, song->channel_buffer, i, count);
+                  process_channel_brightness(song, channel,
+                                             song->channel_buffer, count,
+                                             audio_channels);
+                  if (song->channel[channel].bass > 0)
+                    process_channel_bass(song, channel,
+                                         song->channel_buffer, count,
+                                         audio_channels);
+                  for (i = 0; i < sample_count; i++)
+                    song->common_buffer[i] += song->channel_buffer[i];
+                }
             }
           else
             {
@@ -1102,6 +1270,15 @@ static void do_compute_data(MidSong *song, sint32 count)
                     has_channel_voices = 1;
                     mix_voice(song, song->channel_buffer, i, count);
                   }
+
+              if (song->channel[channel].brightness > 0)
+                process_channel_brightness(song, channel,
+                                           song->channel_buffer, count,
+                                           audio_channels);
+              if (song->channel[channel].bass > 0)
+                process_channel_bass(song, channel,
+                                     song->channel_buffer, count,
+                                     audio_channels);
 
               if (has_channel_voices ||
                   song->channel_effect_tail_remaining[channel] > 0)
@@ -1343,6 +1520,16 @@ size_t mid_song_read_wave(MidSong *song, sint8 *ptr, size_t size, int skip_callb
 	case ME_CHORUS:
 	  mid_song_set_channel_chorus(song, song->current_event->channel,
 	                              song->current_event->a);
+	  break;
+
+	case ME_BRIGHTNESS:
+	  mid_song_set_channel_brightness(song, song->current_event->channel,
+	                                  song->current_event->a);
+	  break;
+
+	case ME_BASS:
+	  mid_song_set_channel_bass(song, song->current_event->channel,
+	                            song->current_event->a);
 	  break;
 
 	case ME_RESET_CONTROLLERS:
@@ -1638,6 +1825,14 @@ void mid_send_event(MidSong *song, int type, int channel, int a, int b)
       mid_song_set_channel_chorus(song, channel, a);
       break;
 
+    case ME_BRIGHTNESS:
+      mid_song_set_channel_brightness(song, channel, a);
+      break;
+
+    case ME_BASS:
+      mid_song_set_channel_bass(song, channel, a);
+      break;
+
     case ME_PROGRAM:
       if (ISDRUMCHANNEL(song, channel))
         song->channel[channel].bank = a;
@@ -1709,6 +1904,8 @@ sint32 mid_song_get_controller_value_at_tick(MidSong *song, int channel, int cc,
     temp_channel_state.sustain = 0;
     temp_channel_state.reverb_send = 0;
     temp_channel_state.chorus_send = 0;
+    temp_channel_state.brightness = 0;
+    temp_channel_state.bass = 0;
     temp_channel_state.pitchbend = 0x2000;
     temp_channel_state.panning = 64; /* Center panning */
     /* We don't have dedicated fields for other CCs, so we can't track them yet.
@@ -1743,6 +1940,12 @@ sint32 mid_song_get_controller_value_at_tick(MidSong *song, int channel, int cc,
             case ME_CHORUS:
                 temp_channel_state.chorus_send = e->a;
                 break;
+            case ME_BRIGHTNESS:
+                temp_channel_state.brightness = e->a;
+                break;
+            case ME_BASS:
+                temp_channel_state.bass = e->a;
+                break;
             case ME_RESET_CONTROLLERS:
                 temp_channel_state.volume = 90;
                 temp_channel_state.expression = 127;
@@ -1750,6 +1953,8 @@ sint32 mid_song_get_controller_value_at_tick(MidSong *song, int channel, int cc,
                 temp_channel_state.pitchbend = 0x2000;
                 temp_channel_state.reverb_send = 0;
                 temp_channel_state.chorus_send = 0;
+                temp_channel_state.brightness = 0;
+                temp_channel_state.bass = 0;
                 break;
             /* Other events like modulation, reverb, etc. are not stored in MidChannel struct yet */
             }
@@ -1772,6 +1977,10 @@ sint32 mid_song_get_controller_value_at_tick(MidSong *song, int channel, int cc,
         return temp_channel_state.reverb_send;
     case 93: /* Chorus Send */
         return temp_channel_state.chorus_send;
+    case 74: /* Brightness/Tone Control */
+        return temp_channel_state.brightness;
+    case 31: /* Bass Boost */
+        return temp_channel_state.bass;
     case 256: /* Pitch Bend - Using a custom CC number for this special case */
         return temp_channel_state.pitchbend;
     default:

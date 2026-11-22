@@ -162,7 +162,7 @@ typedef struct _MidChannel MidChannel;
 struct _MidChannel
 {
   int bank, program, volume, sustain, panning, pitchbend, expression;
-  int reverb_send, chorus_send;
+  int reverb_send, chorus_send, brightness, bass;
   int mono;	/* one note only on this channel -- not implemented yet */
   int pitchsens;
   float pitchfactor; /* precomputed pitch bend factor to save some fdiv's */
@@ -293,6 +293,8 @@ struct _MidSong
   float chorus_phase[16];
   uint8 chorus_lfo_initialized;
   float chorus_lfo_table[MID_CHORUS_LFO_TABLE_SIZE];
+  float brightness_lowpass[16][2];
+  float bass_lowpass[16][2];
 };
 
 /* The global callback, shared between modules */

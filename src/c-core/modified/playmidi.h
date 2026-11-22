@@ -53,6 +53,8 @@
 #define ME_CONTROL_CHANGE 17
 #define ME_REVERB	18
 #define ME_CHORUS	19
+#define ME_BRIGHTNESS	20
+#define ME_BASS	21
 
 #define ME_EOT		99
 
@@ -82,6 +84,8 @@ extern void mid_send_event(MidSong *song, int type, int channel, int a, int b);
 extern int mid_song_set_channel_effects(MidSong *song, int channel, int reverb, int chorus);
 extern int mid_song_set_channel_reverb(MidSong *song, int channel, int reverb);
 extern int mid_song_set_channel_chorus(MidSong *song, int channel, int chorus);
+extern int mid_song_set_channel_brightness(MidSong *song, int channel, int brightness);
+extern int mid_song_set_channel_bass(MidSong *song, int channel, int bass);
 extern int mid_song_prepare_effects(MidSong *song, int channel);
 extern int mid_song_set_effects(MidSong *song, int reverb, int chorus);
 extern void mid_song_free_effects(MidSong *song);
