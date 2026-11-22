@@ -19,9 +19,9 @@ For WebAssembly, load the WASM-specific wrappers and module instead:
 
 ```html
 <script>window.patchUrlBase = '.../gus-patch';</script>
-<script src="timidity-player.wasm.js"></script>
+<script src="timidity-player.js"></script>
 <script src="libtimidity.wasm.js"></script>
-<script src="song-player.wasm.js"></script>
+<script src="song-player.js"></script>
 ```
 
 In either case, load the `TimidityPlayer` wrapper and its matching module

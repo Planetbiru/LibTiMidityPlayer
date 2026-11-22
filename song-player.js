@@ -11,7 +11,7 @@
  *   5. Song duration = max(MIDI duration, last clip end)
  *   6. Works with EMPTY MIDI (audio-only playback / render)
  *
- * Requires: TimidityPlayer (and its WASM Module) already loaded globally.
+ * Requires TimidityPlayer and its matching libTiMidity module to be loaded first.
  *
  * Clip data format:
  *   {
