@@ -73,8 +73,10 @@ emcc common.c instrum.c mix.c output.c playmidi.c readmidi.c tables.c timidity.c
 
 ### Compile to WebAssembly
 
+#### Debug Version
+
 ```bash
-emcc common.c instrum.c mix.c output.c playmidi.c readmidi.c tables.c timidity.c stream.c resample.c -O2 -o ..\js-bindings\libtimidity.wasm.js ^
+emcc common.c instrum.c mix.c output.c playmidi.c readmidi.c tables.c timidity.c stream.c resample.c -O0 -o ..\js-bindings\libtimidity.wasm.js ^
   -s ASSERTIONS=1 ^
   -s EXPORTED_FUNCTIONS="['_mid_init_no_config','_mid_init','_mid_exit','_mid_get_version','_mid_song_load','_mid_song_create','_mid_create_options','_mid_song_free','_mid_dlspatches_load','_mid_dlspatches_free','_mid_song_load_dls','_mid_istream_open_mem','_mid_istream_close','_malloc','_free','_mid_song_read_wave','_mid_song_get_patch_names','_mid_istream_seek','_mid_song_get_required_patches','_mid_song_start','_mid_song_set_event_callback','_mid_song_set_volume','_mid_song_set_transpose','_mid_song_set_channel_mute','_mid_song_set_track_mute','_mid_song_panic','_mid_song_get_time','_mid_song_get_current_tick','_mid_song_get_info_json','_mid_song_seek','_mid_song_get_total_time','_mid_set_debug_msg_callback','_mid_set_memory_limit','_mid_note_on','_mid_note_off','_mid_song_load_program','_mid_send_event','_mid_song_resend_active_notes','_mid_song_get_controller_value_at_tick','_mid_song_get_active_voices','_mid_song_get_master_peak','_mid_song_update_events','_mid_song_force_mono_pan','_mid_song_set_effects','_mid_song_set_channel_effects','_mid_song_set_channel_reverb','_mid_song_set_channel_chorus','_mid_song_set_channel_brightness','_mid_song_set_channel_bass']" ^
   -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap','getValue','setValue','UTF8ToString','stringToUTF8','lengthBytesUTF8','HEAPU8','HEAP16','HEAP32','addFunction','FS','PATH']" ^
@@ -95,6 +97,37 @@ All build variants also export `_mid_song_set_channel_effects`,
 per-channel APIs are required for MIDI CC91/CC93 playback, live DAW events, and
 offline rendering with independent channel sends.
 
+#### Minified Version
+
+Run this from the repository root in a Windows Command Prompt with Emscripten
+activated. It writes the optimized loader and matching WASM binary to
+`src\c-core\js-bindings`.
+
+```bat
+cd /d src\c-core\modified
+
+emcc common.c instrum.c mix.c output.c playmidi.c readmidi.c tables.c timidity.c stream.c resample.c ^
+  -Oz ^
+  -DNDEBUG ^
+  -o ..\js-bindings\libtimidity.wasm.js ^
+  -s ASSERTIONS=0 ^
+  -s EXPORTED_FUNCTIONS="['_mid_init_no_config','_mid_init','_mid_exit','_mid_get_version','_mid_song_load','_mid_song_create','_mid_create_options','_mid_song_free','_mid_dlspatches_load','_mid_dlspatches_free','_mid_song_load_dls','_mid_istream_open_mem','_mid_istream_close','_malloc','_free','_mid_song_read_wave','_mid_song_get_patch_names','_mid_istream_seek','_mid_song_get_required_patches','_mid_song_start','_mid_song_set_event_callback','_mid_song_set_volume','_mid_song_set_transpose','_mid_song_set_channel_mute','_mid_song_set_track_mute','_mid_song_panic','_mid_song_get_time','_mid_song_get_current_tick','_mid_song_get_info_json','_mid_song_seek','_mid_song_get_total_time','_mid_set_debug_msg_callback','_mid_set_memory_limit','_mid_note_on','_mid_note_off','_mid_song_load_program','_mid_send_event','_mid_song_resend_active_notes','_mid_song_get_controller_value_at_tick','_mid_song_get_active_voices','_mid_song_get_master_peak','_mid_song_update_events','_mid_song_force_mono_pan','_mid_song_set_effects','_mid_song_set_channel_effects','_mid_song_set_channel_reverb','_mid_song_set_channel_chorus','_mid_song_set_channel_brightness','_mid_song_set_channel_bass']" ^
+  -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap','getValue','setValue','UTF8ToString','stringToUTF8','lengthBytesUTF8','HEAPU8','HEAP16','HEAP32','addFunction','FS','PATH']" ^
+  -s FORCE_FILESYSTEM=1 ^
+  -s ENVIRONMENT=web ^
+  -s ALLOW_MEMORY_GROWTH=1 ^
+  -s ALLOW_TABLE_GROWTH=1
+```
+
+`-Oz` optimizes for output size; it may run slower than `-O2`/`-O3`, so test
+playback performance before deployment. `ENVIRONMENT=web` removes non-browser
+runtime support. Keep `FS` in `EXPORTED_RUNTIME_METHODS` and
+`FORCE_FILESYSTEM=1`, because the player loads configuration and patches through
+the virtual filesystem. Do not add `--closure 1`: Closure can rename filesystem
+API properties used by the external player wrapper (for example, `mkdirTree`).
+The WASM build produces both `libtimidity.wasm.js` and the matching
+`libtimidity.wasm.wasm`; deploy both files together.
+
 ---
 
 ## ⚙️ Optimization Levels
@@ -109,9 +142,13 @@ offline rendering with independent channel sends.
   Standard optimization. Balances performance and file size. Enables common optimizations like inlining and loop unrolling. Recommended for production builds.
 
 - **`-O3`**  
-  Aggressive optimization. Includes all `-O2` optimizations plus advanced techniques like vectorization and heavy inlining.  
-  ⚠️ **Warning:** Do not use `-O3` for this project because it can change internal function names and make debugging or direct function calls unreliable. Stick to `-O2` for stable builds.
+  Aggressive optimization focused on execution speed. It can produce larger
+  output than size-focused optimization.
 
----
+- **`-Oz`**
+  Optimizes for the smallest output and is used by the minified/release commands
+  above. It may trade some runtime speed for a smaller download; test playback
+  performance with representative MIDI files.
 
-👉 Use `-O0` or `-O1` during development/debugging, and switch to `-O2` for production. Avoid `-O3` in this case to prevent function name obfuscation.
+Use `-O0` or `-O1` for debugging, `-O2` for a speed/size balance, `-O3` when
+prioritizing execution speed, and `-Oz` when download size is the priority.
