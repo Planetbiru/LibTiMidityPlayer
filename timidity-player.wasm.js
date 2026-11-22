@@ -1,0 +1,3212 @@
+var Module = {};
+
+Module.timidityReady = false;
+Module.onRuntimeInitialized = function () {
+    Module.timidityReady = true;
+};
+
+// This must be defined *before* libtimidity.wasm.js is loaded and executed.
+Module.preRun = [() => {
+    FS.mkdir('/gus-patch');
+}];
+
+Module.printErr = function (text) {
+    if (text.includes('Enlarging memory arrays')) return;
+    console.warn(text);
+};
+
+/**
+ * TimidityPlayer provides a high-level JavaScript interface to the libTiMidity WebAssembly module.
+ * It handles MIDI playback, real-time MIDI input, audio context management, and patch loading.
+ */
+class TimidityPlayer {
+    /**
+     * Creates a new instance of TimidityPlayer.
+     * @param {Object} options - Configuration options for the player.
+     * @param {string} [options.patchUrlBase] - Base URL path for loading GUS patches (e.g., 'gus-patch').
+     * @param {Function} [options.timidityCfgLoader] - Optional async provider that returns
+     *   the contents of timidity.cfg as text.
+     * @param {Function} [options.instrumentLoader] - Optional async patch provider called as
+     *   (bank, isDrum, program, file) and expected to return binary GUS patch data.
+     * @param {number} [options.bufferSize] - Buffer size for audio processing. Default value is 4096.
+     * @param {number} [options.bufferSizeRealtime] - Buffer size for the real-time synthesizer. Default value is 1024.
+     * @param {number} [options.sampleRate] - Sample rate to render PCM. Default value is 44100.
+     * @param {number} [options.memoryLimitMB] - Maximum memory used by C-core allocations in MiB. Zero means unlimited.
+     */
+    constructor(options = {}) {
+        if (options.memoryLimitMB !== undefined &&
+            (!Number.isFinite(options.memoryLimitMB) || options.memoryLimitMB < 0 ||
+             options.memoryLimitMB * 1024 * 1024 > 0xFFFFFFFF)) {
+            throw new RangeError('memoryLimitMB must be between 0 and 4095.999 MiB.');
+        }
+        this.virtualPatchDir = '/gus-patch'; // The absolute path inside the virtual filesystem
+        this.patchUrlBase = options.patchUrlBase;
+        this.memoryLimitBytes = options.memoryLimitMB === undefined
+            ? undefined
+            : Math.floor(options.memoryLimitMB * 1024 * 1024);
+        this.instrumentLoader = null;
+        if (options.instrumentLoader !== undefined) {
+            this.setInstrumentLoader(options.instrumentLoader);
+        }
+        this.timidityCfgLoader = null;
+        if (options.timidityCfgLoader !== undefined) {
+            this.setTimidityCfgLoader(options.timidityCfgLoader);
+        }
+        this.bufferSize = options.bufferSize || 4096;
+        this.bufferSizeRealtime = options.bufferSizeRealtime || 1024;
+        this.sampleRate = options.sampleRate || 44100;
+        this.Module = Module;
+        this.audioContext = null;
+        this.scriptNode = null;
+        this.graphicEqualizerEnabled = false;
+        this.graphicEqualizerBands = [
+            { frequency: 32, gain: 0, q: 1.1 },
+            { frequency: 64, gain: 0, q: 1.1 },
+            { frequency: 125, gain: 0, q: 1.1 },
+            { frequency: 250, gain: 0, q: 1.1 },
+            { frequency: 500, gain: 0, q: 1.1 },
+            { frequency: 1000, gain: 0, q: 1.1 },
+            { frequency: 2000, gain: 0, q: 1.1 },
+            { frequency: 4000, gain: 0, q: 1.1 },
+            { frequency: 8000, gain: 0, q: 1.1 },
+            { frequency: 16000, gain: 0, q: 1.1 },
+        ];
+        this.graphicEqualizerFilters = [];
+        this.graphicEqualizerInput = null;
+        this.graphicEqualizerOutput = null;
+        this.graphicEqualizerExternalOutput = null;
+        this.reverbLevel = 0;
+        this.chorusLevel = 0;
+        this.channelEffects = Array.from({ length: 16 }, () => ({ reverb: 0, chorus: 0, brightness: 0, bass: 0 }));
+        this.audioBufferPtr = 0;
+        this.audioBufferCapacity = 0;
+        this.songPtr = 0; // Pointer to the C MidSong object
+        this.loadedPatches = new Map(); // Map of filename -> Promise
+        this.loadedPatchFiles = new Set();
+        this.eventListeners = {}; // Event listeners for player events
+        this.playingInterval = null;
+        this.isPlaying = false;
+        this.isSyncEnabled = false; // Flag to enable mixer state synchronization on seek
+        this.isPaused = false;
+        this.isSeeking = false; // Flag to prevent onPlaying updates while user is dragging the seeker
+        this.channelMuteState = new Array(16).fill(false); // Cache for mute state
+        this.pendingDrumKitLoad = null;
+        this.totalDuration = 0; // Total duration in seconds
+        this.midiInfo = {};
+        this.lastDebugMessage = '';
+
+        // MIDI Event Constants from libtimidity
+        // Do not change this value
+        this.ME_NOTEON              =  1;
+        this.ME_NOTEOFF             =  2;
+        this.ME_KEYPRESSURE         =  3;
+        this.ME_MAINVOLUME          =  4;
+        this.ME_PAN                 =  5;
+        this.ME_SUSTAIN             =  6;
+        this.ME_EXPRESSION          =  7;
+        this.ME_PITCHWHEEL          =  8;
+        this.ME_PROGRAM             =  9;
+        this.ME_TEMPO               = 10;
+        this.ME_PITCH_SENS          = 11;
+        this.ME_ALL_SOUNDS_OFF      = 12;
+        this.ME_RESET_CONTROLLERS   = 13;
+        this.ME_ALL_NOTES_OFF       = 14;
+        this.ME_TONE_BANK           = 15;
+        this.ME_LYRIC               = 16;
+        this.ME_CONTROL_CHANGE      = 17;
+        this.ME_REVERB              = 18;
+        this.ME_CHORUS              = 19;
+        this.ME_BRIGHTNESS          = 20;
+        this.ME_BASS                = 21;
+
+        // If the WebAssembly module has already finished initializing, set up the C bindings immediately.
+        if (this.Module.timidityReady) {
+            this._onRuntimeInitialized();
+        } else {
+            // Otherwise, we must wait. Since this wrapper might be used synchronously,
+            // we override the existing onRuntimeInitialized to also call our internal setup.
+            const orig = this.Module.onRuntimeInitialized;
+            this.Module.onRuntimeInitialized = () => {
+                if (orig) orig();
+                this._onRuntimeInitialized();
+            };
+        }
+
+        return new Proxy(this, {
+            get(target, prop, receiver) {
+                // Capture access to "onXxx" properties that do not yet exist → turn them into event registrars.
+                if (
+                    typeof prop === 'string' &&
+                    prop.startsWith('on') &&
+                    !(prop in target)
+                ) {
+                    return (...args) => target.on(prop, ...args);
+                }
+                return Reflect.get(target, prop, receiver);
+            }
+        });
+    }
+
+    // --- Event Emitter ---
+
+    /**
+     * Registers a listener callback for a specific event.
+     * @param {string} eventName - The name of the event to listen for.
+     * @param {Function} listener - The callback function to be executed when the event is emitted.
+     */
+    on(eventName, listener) {
+        if (!this.eventListeners[eventName]) this.eventListeners[eventName] = [];
+        this.eventListeners[eventName].push(listener);
+    }
+
+    /**
+     * Emits an event, calling all registered listeners with the provided arguments.
+     * @param {string} eventName - The name of the event to emit.
+     * @param {...any} args - The arguments to pass to the listeners.
+     */
+    emit(eventName, ...args) {
+        this.eventListeners[eventName]?.forEach(listener => listener(...args));
+    }
+
+    // --- Private Methods ---
+
+    /**
+     * Callback triggered when the WebAssembly runtime is fully initialized.
+     * Binds the C functions to JavaScript for internal usage.
+     * @private
+     */
+    _onRuntimeInitialized() {
+        const cwrap = this.Module.cwrap;
+        this.c = {
+            init: cwrap('mid_init', 'number', ['string']),
+            exit: cwrap('mid_exit', null, []),
+            getVersion: cwrap('mid_get_version', 'number', []),
+            loadSong: cwrap('mid_song_load', 'number', ['number', 'number']),
+            setDebugCallback: cwrap('mid_set_debug_msg_callback', null, ['number']),
+            freeSong: cwrap('mid_song_free', null, ['number']),
+            createSong: cwrap('mid_song_create', 'number', ['number']),
+            getRequiredPatches: cwrap('mid_song_get_required_patches', 'string', ['number']),
+            startSong: cwrap('mid_song_start', null, ['number']),
+            setEventCallback: cwrap('mid_song_set_event_callback', null, ['number', 'number']),
+            setTranspose: cwrap('mid_song_set_transpose', null, ['number', 'number']),
+            setChannelMute: cwrap('mid_song_set_channel_mute', null, ['number', 'number', 'number']),
+            setTrackMute: cwrap('mid_song_set_track_mute', null, ['number', 'number', 'number']),
+            panic: cwrap('mid_song_panic', null, ['number']),
+            readWave: cwrap('mid_song_read_wave', 'number', ['number', 'number', 'number', 'number']),
+            openMemoryStream: cwrap('mid_istream_open_mem', 'number', ['number', 'number']),
+            seekStream: cwrap('mid_istream_seek', 'number', ['number', 'number', 'number']),
+            closeStream: cwrap('mid_istream_close', null, ['number']),
+            seekSong: cwrap('mid_song_seek', null, ['number', 'number']),
+            setVolume: cwrap('mid_song_set_volume', null, ['number', 'number']),
+            getTime: cwrap('mid_song_get_time', 'number', ['number']),
+            getTotalTime: cwrap('mid_song_get_total_time', 'number', ['number']),
+            getCurrentTick: cwrap('mid_song_get_current_tick', 'number', ['number']),
+            noteOn: cwrap('mid_note_on', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+            noteOff: cwrap('mid_note_off', null, ['number', 'number', 'number']),
+            loadProgram: cwrap('mid_song_load_program', 'number', ['number', 'number', 'number', 'number']),
+            sendEvent: cwrap('mid_send_event', null, ['number', 'number', 'number', 'number', 'number']),
+            resendActiveNotes: cwrap('mid_song_resend_active_notes', null, ['number']),
+            getControllerValueAtTick: cwrap('mid_song_get_controller_value_at_tick', 'number', ['number', 'number', 'number', 'number']),
+            getInfoJson: cwrap('mid_song_get_info_json', 'string', ['number']),
+            getActiveVoices: cwrap('mid_song_get_active_voices', 'number', ['number']),
+            updateEvents: cwrap('mid_song_update_events', 'number', ['number', 'number']),
+            getMasterPeak: cwrap('mid_song_get_master_peak', 'number', ['number', 'number', 'number']),
+            forceMonoPan: cwrap('mid_song_force_mono_pan', null, ['number']),
+            setMemoryLimit: typeof this.Module._mid_set_memory_limit === 'function'
+                ? cwrap('mid_set_memory_limit', 'number', ['number'])
+                : null,
+            malloc: cwrap('malloc', 'number', ['number']),
+            createOptions: cwrap('mid_create_options', 'number', ['number', 'number', 'number', 'number']),
+            setEffects: typeof this.Module._mid_song_set_effects === 'function'
+                ? cwrap('mid_song_set_effects', 'number', ['number', 'number', 'number'])
+                : null,
+            setChannelEffects: typeof this.Module._mid_song_set_channel_effects === 'function'
+                ? cwrap('mid_song_set_channel_effects', 'number', ['number', 'number', 'number', 'number'])
+                : null,
+            setChannelReverb: typeof this.Module._mid_song_set_channel_reverb === 'function'
+                ? cwrap('mid_song_set_channel_reverb', 'number', ['number', 'number', 'number'])
+                : null,
+            setChannelChorus: typeof this.Module._mid_song_set_channel_chorus === 'function'
+                ? cwrap('mid_song_set_channel_chorus', 'number', ['number', 'number', 'number'])
+                : null,
+            setChannelBrightness: typeof this.Module._mid_song_set_channel_brightness === 'function'
+                ? cwrap('mid_song_set_channel_brightness', 'number', ['number', 'number', 'number'])
+                : null,
+            setChannelBass: typeof this.Module._mid_song_set_channel_bass === 'function'
+                ? cwrap('mid_song_set_channel_bass', 'number', ['number', 'number', 'number'])
+                : null,
+        };
+
+        this._setupDebugCallback();
+
+        this.emit('onRuntimeInitialized');
+    }
+
+    /**
+     * Sets up a debug callback function for the WebAssembly module.
+     *
+     * The callback receives a pointer to a UTF-8 encoded debug message,
+     * converts it to a string, trims it, and stores it in `lastDebugMessage`.
+     * The callback is registered with the native C interface.
+     */
+    _setupDebugCallback() {
+        const debugCallback = (messagePtr) => {
+            const message = this.Module.UTF8ToString(messagePtr);
+            this.lastDebugMessage = message.trim();
+        };
+        const callbackPtr = this.Module.addFunction(debugCallback, 'vp');
+        this.c.setDebugCallback(callbackPtr);
+    }
+
+    /**
+     * Handles incoming MIDI events from the WebAssembly module.
+     *
+     * Converts the event timestamp from milliseconds to seconds,
+     * extracts optional text data, and emits corresponding events:
+     * - 'onNoteOn' when a Note On event occurs with velocity > 0
+     * - 'onNoteOff' when a Note Off event occurs, or a Note On with velocity = 0
+     * - 'onMidiEvent' for all MIDI events with full details
+     *
+     * @param {number} callbackPosition - Sample position supplied by the current C build.
+     * @param {number} timeMilisecond - Event time in milliseconds.
+     * @param {number} eventStatus - Raw MIDI status byte.
+     * @param {number} channel - MIDI channel number.
+     * @param {number} eventType - Internal event type identifier.
+     * @param {number} a - First event parameter (e.g., pitch).
+     * @param {number} b - Second event parameter (e.g., velocity).
+     * @param {number} textPtr - Pointer to optional UTF-8 text data.
+     */
+    _handleMidiEvent(callbackPosition, timeMilisecond, eventStatus, channel, eventType, a, b, textPtr) {
+        // The current C build passes sample position here, so read the actual MIDI tick from the song.
+        const tick = this.songPtr !== 0
+            ? this.c.getCurrentTick(this.songPtr)
+            : callbackPosition;
+        const timeSecond = timeMilisecond / 1000.0; // Convert milliseconds to seconds
+        let text = '';
+        if (textPtr) {
+            text = this.Module.UTF8ToString(textPtr);
+        }
+
+        // Must before onMidiEvent
+        if (eventType === this.ME_NOTEON && b > 0) { // Note On on any channel
+            this.emit('onNoteOn', { tick: tick, channel: channel, pitch: a, velocity: b });
+        } else if (eventType === this.ME_NOTEOFF || (eventType === this.ME_NOTEON && b === 0)) { // Note Off on any channel
+            this.emit('onNoteOff', { tick: tick, channel: channel, pitch: a });
+        }
+
+        this.emit('onMidiEvent', { tick: tick, timeSecond, status: eventStatus, eventType, channel, a, b, text });
+
+    }
+
+    /**
+     * Loads the required instrument patch files into the WebAssembly virtual filesystem.
+     *
+     * This function parses a newline-separated list of patch filenames, ensures
+     * their directories exist inside the VFS, and loads each patch through the
+     * configured provider or from the server. It tracks progress and emits events.
+     *
+     * Events emitted:
+     * - 'onInstrumentList': required files and resolved instrument identities.
+     * - 'onInstrumentStatus': each file's loading, loaded, or failed state.
+     * - 'onInstrumentLoading': emitted before loading starts and after each file
+     *   finishes, with arguments (loadedCount, totalCount, fileName).
+     * - 'onInstrumentLoaded': emitted once all required files are ready.
+     *
+     * @param {string} patchListString - Newline-separated list of patch filenames to load.
+     * @param {{bank: number, isDrum: boolean, program: number}|null} [instrument=null] -
+     *   Instrument identity to pass to the custom loader for every patch in the list.
+     *   When omitted, identity is resolved from timidity.cfg for each patch filename.
+     * @returns {Promise<void>} Resolves when all required patches are loaded.
+     */
+    async _loadRequiredPatches(patchListString, instrument = null) {
+        if (!patchListString) return Promise.resolve();
+
+        const requiredPatches = patchListString.split('\n').filter(p => p.length > 0);
+        const total = requiredPatches.length;
+        if (total === 0) return Promise.resolve();
+
+        let instrumentsByFile = new Map();
+        if (this.instrumentLoader && !instrument) {
+            const config = await this._loadTimidityCfg();
+            for (const [bank, entries] of config.banks) {
+                for (const entry of entries) {
+                    instrumentsByFile.set(entry.file, { bank, isDrum: false, program: entry.id });
+                }
+            }
+            for (const [bank, entries] of config.drums) {
+                for (const entry of entries) {
+                    instrumentsByFile.set(entry.file, { bank, isDrum: true, program: entry.id });
+                }
+            }
+        }
+
+        const entries = requiredPatches.map(file => {
+            const resolved = instrument || instrumentsByFile.get(file);
+            return {
+                file,
+                bank: resolved ? resolved.bank : null,
+                isDrum: resolved ? resolved.isDrum : null,
+                program: resolved ? resolved.program : null,
+                status: this.loadedPatchFiles.has(file)
+                    ? 'loaded'
+                    : this.loadedPatches.has(file) ? 'loading' : 'pending'
+            };
+        });
+        this.emit('onInstrumentList', entries);
+
+        let loadedCount = 0;
+        this.emit('onInstrumentLoading', loadedCount, total, '');
+        for (const entry of entries) {
+            const {file} = entry;
+            const patchInstrument = instrument || instrumentsByFile.get(file);
+            if (this.instrumentLoader && !patchInstrument) {
+                this.emit('onInstrumentStatus', file, 'failed');
+                throw new Error(`Cannot resolve bank, drum status, and program for patch: ${file}`);
+            }
+
+            try {
+                let promise = this.loadedPatches.get(file);
+                if (promise) {
+                    if (!this.loadedPatchFiles.has(file)) {
+                        this.emit('onInstrumentStatus', file, 'loading');
+                    }
+                } else {
+                    this.emit('onInstrumentStatus', file, 'loading');
+                    promise = this._loadInstrumentPatch(
+                        patchInstrument ? patchInstrument.bank : 0,
+                        patchInstrument ? patchInstrument.isDrum : false,
+                        patchInstrument ? patchInstrument.program : 0,
+                        file
+                    ).then(byteLength => {
+                        this.loadedPatchFiles.add(file);
+                        return byteLength;
+                    });
+                    this.loadedPatches.set(file, promise);
+                }
+
+                const byteLength = await promise;
+                this.loadedPatchFiles.add(file);
+                loadedCount++;
+                this.emit('onInstrumentStatus', file, 'loaded', byteLength);
+                this.emit('onInstrumentLoading', loadedCount, total, file);
+            } catch (error) {
+                this.loadedPatchFiles.delete(file);
+                if (this.loadedPatches.get(file) === promise) {
+                    this.loadedPatches.delete(file);
+                }
+                this.emit('onInstrumentStatus', file, 'failed');
+                throw error;
+            }
+        }
+
+        this.emit('onInstrumentLoaded', total);
+    }
+
+    /**
+     * Loads one patch through the configured provider, or from the server when no
+     * provider is configured, then stores it at the path expected by libTiMidity.
+     * @param {number} bank - Instrument bank or drumset number.
+     * @param {boolean} isDrum - Whether the requested patch belongs to a drumset.
+     * @param {number} program - Program number, or drum note number for a drum patch.
+     * @param {string} file - Relative GUS patch path, used by the provider or server loader.
+     * @returns {Promise<void>}
+     * @private
+     */
+    async _loadInstrumentPatch(bank, isDrum, program, file) {
+        const fullVirtualPath = `${this.virtualPatchDir}/${file}`;
+        const directory = this.Module.PATH.dirname(fullVirtualPath);
+        const filename = this.Module.PATH.basename(fullVirtualPath);
+        this.Module.FS.mkdirTree(directory);
+
+        if (this.instrumentLoader) {
+            const patchData = await this.instrumentLoader(bank, isDrum, program, file);
+            let bytes;
+            if (patchData instanceof Uint8Array) {
+                bytes = patchData;
+            } else if (patchData instanceof ArrayBuffer) {
+                bytes = new Uint8Array(patchData);
+            } else if (ArrayBuffer.isView(patchData)) {
+                bytes = new Uint8Array(patchData.buffer, patchData.byteOffset, patchData.byteLength);
+            } else if (typeof Blob !== 'undefined' && patchData instanceof Blob) {
+                bytes = new Uint8Array(await patchData.arrayBuffer());
+            } else {
+                throw new TypeError(`instrumentLoader must return binary patch data for: ${file}`);
+            }
+            this.Module.FS.writeFile(`${directory}/${filename}`, bytes);
+            return bytes.byteLength;
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                const url = `${this.patchUrlBase}/${file}`;
+                this.Module.FS.createPreloadedFile(directory, filename, url, true, true, resolve, reject);
+            } catch (e) {
+                if (e.name === 'ErrnoError' || (e.message && e.message.includes('File exists'))) {
+                    resolve();
+                } else {
+                    console.warn("Patch loading error:", file, e);
+                    reject(e);
+                }
+            }
+        });
+    }
+
+    /**
+     * Sets or clears the callback used to retrieve instrument patch data.
+     * @param {Function|null} loader - Called as (bank, isDrum, program, file) and
+     *   must return binary GUS patch data, optionally asynchronously.
+     */
+    setInstrumentLoader(loader) {
+        if (loader !== null && typeof loader !== 'function') {
+            throw new TypeError('instrumentLoader must be a function or null');
+        }
+        this.instrumentLoader = loader;
+    }
+
+    /**
+     * Parses raw Standard MIDI File (SMF) data to extract:
+     *  - the timing division (ticks per quarter note),
+     *  - the tempo (Set Tempo / 0x51) timeline,
+     *  - the time-signature (0x58) timeline,
+     *  - per-track metadata (names, whether the track contains channel events),
+     *  - and per-channel program (Program Change / 0xCn), Bank Select MSB (CC 0),
+     *    and Bank Select LSB (CC 32) event lists.
+     *
+     * The resulting object is stored as `this.tempoMap` and consumed by tick↔time
+     * conversion helpers (`tickToTime`, `timeToTick`, `goTo`), metronome helpers
+     * (`tickToBeat`, `tickToMeasure`, `getMetronome`), and the per-channel
+     * instrumentation lookup helpers (`getProgram`, `getBank`).
+     *
+     * The per-channel maps are arrays of length 16 (indexed by MIDI channel 0–15),
+     * where each inner array is sorted by ascending `tick`. They are suitable for
+     * linear scan / binary search by tick.
+     *
+     * @param {Uint8Array} midiData - Complete Standard MIDI File data to parse.
+     * @returns {{
+     *   division: number,
+     *   timeMap: Array<{tick: number, timeSec: number, mpqn: number}>,
+     *   measureMap: Array<{
+     *     tick: number,
+     *     absBeat: number,
+     *     measure: number,
+     *     num: number,
+     *     denom: number,
+     *     ticksPerBeat: number
+     *   }>,
+     *   tracksCount: number,
+     *   trackNames: string[],
+     *   trackHasNotes: boolean[],
+     *   channelsUsed: number[],
+     *   maxTick: number,
+     *   totalSeconds: number,
+     *   programMap: Array<Array<{tick: number, channel: number, program: number}>>,
+     *   volumeMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   panMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   expressionMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   reverbMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   chorusMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   brightnessMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   bassMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   bankMsbMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   bankLsbMap: Array<Array<{tick: number, channel: number, value: number}>>
+     * }} Parsed timing, meter, track, and instrumentation metadata for the song.
+     *   - `division` — SMF timing division (ticks per quarter note).
+     *   - `timeMap` — sorted tempo-change timeline (`mpqn` = microseconds per quarter note).
+     *   - `measureMap` — sorted time-signature timeline with precomputed beat/measure offsets.
+     *   - `tracksCount` — number of MTrk chunks found in the file.
+     *   - `trackNames` — best-effort track names (falls back to `Track N`).
+     *   - `trackHasNotes` — whether each track contains any channel (0x8–0xE) events.
+     *   - `maxTick` — highest absolute tick encountered across all tracks.
+     *   - `totalSeconds` — computed song duration in seconds from tempo map + `maxTick`.
+     *   - `programMap[ch]` — Program Change events for channel `ch`, sorted by tick.
+     *   - `volumeMap[ch]` — Channel Volume (CC 7) events for channel `ch`, sorted by tick.
+     *   - `panMap[ch]` — Pan (CC 10) events for channel `ch`, sorted by tick.
+     *   - `expressionMap[ch]` — Expression (CC 11) events for channel `ch`, sorted by tick.
+     *   - `reverbMap[ch]` — Reverb send (CC 91) events for channel `ch`, sorted by tick.
+     *   - `chorusMap[ch]` — Chorus send (CC 93) events for channel `ch`, sorted by tick.
+     *   - `bankMsbMap[ch]` — Bank Select MSB (CC 0) events for channel `ch`, sorted by tick.
+     *   - `bankLsbMap[ch]` — Bank Select LSB (CC 32) events for channel `ch`, sorted by tick.
+     * @throws {Error} If the data does not begin with a valid `MThd` header chunk.
+     * @private
+     */
+    _buildTempoMap(midiData) {
+        let offset = 0;
+
+        const readString = (len) => { let str = ''; for (let i = 0; i < len; i++) str += String.fromCharCode(midiData[offset++]); return str; };
+        const readUint16 = () => (midiData[offset++] << 8) | midiData[offset++];
+        const readUint32 = () => (midiData[offset++] << 24) | (midiData[offset++] << 16) | (midiData[offset++] << 8) | midiData[offset++];
+        const readVLQ = () => {
+            let val = 0; let byte;
+            do { byte = midiData[offset++]; val = (val << 7) | (byte & 0x7F); } while (byte & 0x80);
+            return val;
+        };
+
+        if (readString(4) !== 'MThd') throw new Error("Not a valid MIDI file");
+        readUint32();
+        const format = readUint16();
+        const tracksCount = readUint16();
+        const division = readUint16();
+
+        const tempoEvents = [];
+        const timeSigEvents = [];
+        const trackNames = [];
+        const trackHasNotes = [];
+        const channelsUsed = new Set();
+        const programEvents = [];
+        const volumeEvents = [];
+        const panEvents = [];
+        const expressionEvents = [];
+        const reverbEvents = [];
+        const chorusEvents = [];
+        const brightnessEvents = [];
+        const bassEvents = [];
+        const bankMsbEvents = [];
+        const bankLsbEvents = [];
+        let maxTick = 0;
+
+        for (let t = 0; t < tracksCount; t++) {
+            if (readString(4) !== 'MTrk') break;
+            const trackLen = readUint32();
+            const trackEnd = offset + trackLen;
+
+            let absTick = 0;
+            let runningStatus = 0;
+            let currentTrackName = null;
+            let hasChannelEvents = false;
+
+            while (offset < trackEnd) {
+                absTick += readVLQ();
+                let status = midiData[offset];
+                if (status >= 0x80) { runningStatus = status; offset++; } else { status = runningStatus; }
+
+                if (status === 0xFF) {
+                    const type = midiData[offset++];
+                    const len = readVLQ();
+                    if (type === 0x51 && len === 3) {
+                        const mpqn = (midiData[offset] << 16) | (midiData[offset + 1] << 8) | midiData[offset + 2];
+                        tempoEvents.push({ tick: absTick, mpqn });
+                    } else if (type === 0x58 && len === 4) {
+                        const num = midiData[offset];
+                        const denom = Math.pow(2, midiData[offset + 1]);
+                        timeSigEvents.push({ tick: absTick, num, denom });
+                    } else if (type === 0x03) {
+                        const nameBytes = midiData.slice(offset, offset + len);
+                        try {
+                            const nameStr = new TextDecoder().decode(nameBytes);
+                            if (!currentTrackName) currentTrackName = nameStr;
+                        } catch (e) { }
+                    }
+                    offset += len;
+                } else if (status === 0xF0 || status === 0xF7) {
+                    const len = readVLQ();
+                    offset += len;
+                } else {
+                    // Channel event — perlu membaca data bytes untuk program/bank
+                    const cmd = status >> 4;
+                    const ch = status & 0xF;
+                    if (cmd >= 0x8 && cmd <= 0xE) {
+                        hasChannelEvents = true;
+                        channelsUsed.add(ch);
+                    }
+
+                    if (status >= 0xF8) {
+                        // System Realtime (no data bytes)
+                    } else if (status === 0xF1 || status === 0xF3 || cmd === 0xC || cmd === 0xD) {
+                        const d1 = midiData[offset];
+                        offset += 1;
+                        if (cmd === 0xC) { // Program Change
+                            programEvents.push({ tick: absTick, channel: ch, program: d1 });
+                        }
+                    } else {
+                        const d1 = midiData[offset];
+                        const d2 = midiData[offset + 1];
+                        offset += 2;
+                        if (cmd === 0xB) { // Control Change
+                            if (d1 === 7) {
+                                volumeEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 10) {
+                                panEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 11) {
+                                expressionEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 91) {
+                                reverbEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 93) {
+                                chorusEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 74) {
+                                brightnessEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 31) {
+                                bassEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 0) {
+                                bankMsbEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 32) {
+                                bankLsbEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            }
+                        }
+                    }
+                }
+            }
+            if (absTick > maxTick) maxTick = absTick;
+            trackNames.push(currentTrackName || `Track ${t}`);
+            trackHasNotes.push(hasChannelEvents);
+        }
+
+        tempoEvents.sort((a, b) => a.tick - b.tick);
+        if (tempoEvents.length === 0 || tempoEvents[0].tick !== 0) {
+            tempoEvents.unshift({ tick: 0, mpqn: 500000 });
+        }
+
+        const buildChannelMap = (events) => {
+            const byChannel = Array.from({ length: 16 }, () => []);
+            for (const ev of events) byChannel[ev.channel].push(ev);
+            for (const arr of byChannel) arr.sort((a, b) => a.tick - b.tick);
+            return byChannel;
+        };
+
+        const programMap = buildChannelMap(programEvents);
+        const volumeMap = buildChannelMap(volumeEvents);
+        const panMap = buildChannelMap(panEvents);
+        const expressionMap = buildChannelMap(expressionEvents);
+        const reverbMap = buildChannelMap(reverbEvents);
+        const chorusMap = buildChannelMap(chorusEvents);
+        const brightnessMap = buildChannelMap(brightnessEvents);
+        const bassMap = buildChannelMap(bassEvents);
+        const bankMsbMap = buildChannelMap(bankMsbEvents);
+        const bankLsbMap = buildChannelMap(bankLsbEvents);
+
+        const timeMap = [];
+        let currentTime = 0;
+        let currentTick = 0;
+        let currentMpqn = 500000;
+
+        for (const ev of tempoEvents) {
+            if (ev.tick > currentTick) {
+                const deltaTicks = ev.tick - currentTick;
+                const deltaTimeSec = (deltaTicks / division) * (currentMpqn / 1000000);
+                currentTime += deltaTimeSec;
+                currentTick = ev.tick;
+            }
+            currentMpqn = ev.mpqn;
+            timeMap.push({ tick: currentTick, timeSec: currentTime, mpqn: currentMpqn });
+        }
+
+        // Build Time Signature Map
+        timeSigEvents.sort((a, b) => a.tick - b.tick);
+        if (timeSigEvents.length === 0 || timeSigEvents[0].tick !== 0) {
+            timeSigEvents.unshift({ tick: 0, num: 4, denom: 4 }); // Default 4/4
+        }
+
+        const measureMap = [];
+        let currentAbsBeat = 0;
+        let currentMeasure = 1;
+        let lastSigTick = 0;
+        let currentNum = 4;
+        let currentDenom = 4;
+
+        for (const ev of timeSigEvents) {
+            if (ev.tick > lastSigTick) {
+                const deltaTicks = ev.tick - lastSigTick;
+                const ticksPerBeat = division * (4 / currentDenom);
+                const elapsedBeats = deltaTicks / ticksPerBeat;
+                currentAbsBeat += elapsedBeats;
+                currentMeasure += elapsedBeats / currentNum;
+                lastSigTick = ev.tick;
+            }
+            currentNum = ev.num;
+            currentDenom = ev.denom;
+            measureMap.push({
+                tick: lastSigTick,
+                absBeat: currentAbsBeat,
+                measure: currentMeasure,
+                num: currentNum,
+                denom: currentDenom,
+                ticksPerBeat: division * (4 / currentDenom)
+            });
+        }
+
+        let totalSeconds = 0;
+        if (timeMap.length > 0) {
+            const lastMap = timeMap[timeMap.length - 1];
+            const deltaTicks = maxTick - lastMap.tick;
+            const deltaSec = (deltaTicks / division) * (lastMap.mpqn / 1000000);
+            totalSeconds = lastMap.timeSec + deltaSec;
+        }
+
+        return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, channelsUsed: Array.from(channelsUsed).sort((a, b) => a - b), maxTick, totalSeconds,
+            programMap, volumeMap, panMap, expressionMap, reverbMap, chorusMap, brightnessMap, bassMap, bankMsbMap, bankLsbMap
+        };
+    }
+
+    /**
+     * Converts an array of PCM audio chunks into a WAV file Blob.
+     *
+     * This function constructs a standard 44-byte WAV header and appends
+     * the provided PCM data chunks to form a valid WAV file.
+     *
+     * @param {ArrayBufferView[]} chunks - Array of PCM audio chunks to be written.
+     * @param {number} totalSamples - Total number of audio samples across all chunks.
+     * @param {number} sampleRate - Sampling rate in Hz (e.g., 44100).
+     * @param {number} [channels=2] - Number of audio channels (1 = mono, 2 = stereo).
+     * @returns {Blob} A Blob object containing the generated WAV file data.
+     */
+    _chunksToWav(chunks, totalSamples, sampleRate, channels = 2) {
+        const buffer = new ArrayBuffer(44 + totalSamples * 2);
+        const dataView = new DataView(buffer);
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        const byteLength = totalSamples * 2;
+
+        writeString(dataView, 0, 'RIFF');
+        dataView.setUint32(4, 36 + byteLength, true);
+        writeString(dataView, 8, 'WAVE');
+        writeString(dataView, 12, 'fmt ');
+        dataView.setUint32(16, 16, true);
+        dataView.setUint16(20, 1, true); // PCM format
+        dataView.setUint16(22, channels, true); // Mono or Stereo
+        dataView.setUint32(24, sampleRate, true);
+        dataView.setUint32(28, sampleRate * channels * 2, true); // byte rate
+        dataView.setUint16(32, channels * 2, true); // block align
+        dataView.setUint16(34, 16, true); // bits per sample
+        writeString(dataView, 36, 'data');
+        dataView.setUint32(40, byteLength, true);
+
+        let offset = 44;
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const uint8View = new Uint8Array(buffer, offset, chunk.byteLength);
+            uint8View.set(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+            offset += chunk.byteLength;
+        }
+
+        return new Blob([dataView], { type: 'audio/wav' });
+    }
+
+    // --- Public API ---
+
+    /**
+     * Initializes the WebAudio context and the libTiMidity engine.
+     * Must be called before loading or playing any MIDI files.
+     * @param {boolean} [offline=false] - Whether to initialize an OfflineAudioContext for rendering without playback.
+     * @returns {Promise<boolean>} True if initialization was successful, false otherwise.
+     */
+    async init(offline = false) {
+        if (this.audioContext) {
+            this.emit('onError', "Already initialized.");
+            return false;
+        }
+        
+        // Initialize AudioContext synchronously so load() doesn't fail its check
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        this.audioContext = offline ? new OfflineAudioContext(2, this.sampleRate * 60, this.sampleRate) : new AudioContextClass({ sampleRate: this.sampleRate });
+        this.gainNode = this.audioContext.createGain();
+        this._initializeGraphicEqualizer();
+        this._routeGraphicEqualizer();
+        if (!offline) {
+            this.audioContext.suspend();
+        }
+
+        return this._waitForRuntime().then(async () => {
+            if (this.memoryLimitBytes !== undefined) {
+                if (!this.c.setMemoryLimit) {
+                    this.emit('onError', 'This libTiMidity build does not support memoryLimitMB. Rebuild it with the memory-limit C API.');
+                    return false;
+                }
+                if (!this.c.setMemoryLimit(this.memoryLimitBytes)) {
+                    this.emit('onError', 'memoryLimitMB is below the C-core memory already allocated.');
+                    return false;
+                }
+            }
+
+            const config = await this._loadTimidityCfg();
+            // Use the virtual path for initialization inside the WASM module.
+            const configPath = `${this.virtualPatchDir}/timidity.cfg`;
+            this.Module.FS.writeFile(configPath, config.text);
+            const rc = this.c.init(configPath); // Initialize libTiMidity with config file from VFS
+            if (rc === 0) {
+                if (!offline) {
+
+                    // Removed await this.initRealtimeSong() because we'll chain it
+                    let rtPromise = this.initRealtimeSong() || Promise.resolve();
+                    
+                    this.scriptNode = this.audioContext.createScriptProcessor(this.bufferSize, 0, 2);
+
+                    this.scriptNode.onaudioprocess = (e) => {
+                        const outL = e.outputBuffer.getChannelData(0);
+                        const outR = e.outputBuffer.getChannelData(1);
+                        outL.fill(0);
+                        outR.fill(0);
+
+                        const pcmBytes = outL.length * 4;
+                        if (!this.audioBufferPtr || this.audioBufferCapacity < pcmBytes) {
+                            const newBufferPtr = this.Module._malloc(pcmBytes);
+                            if (!newBufferPtr) {
+                                this.emit('onError', "Unable to allocate the audio processing buffer.");
+                                return;
+                            }
+                            if (this.audioBufferPtr) {
+                                this.Module._free(this.audioBufferPtr);
+                            }
+                            this.audioBufferPtr = newBufferPtr;
+                            this.audioBufferCapacity = pcmBytes;
+                        }
+
+                        if (this.songPtr !== 0 && !this.isPaused && this.isPlaying) {
+                            const bytesReadMain = this.c.readWave(this.songPtr, this.audioBufferPtr, pcmBytes, 0);
+                            if (bytesReadMain > 0) {
+                                const pcmSamples = this.Module.HEAP16;
+                                const samplesRead = Math.min(outL.length, bytesReadMain >> 2);
+                                const sampleOffset = this.audioBufferPtr >> 1;
+                                for (let i = 0; i < samplesRead; i++) {
+                                    outL[i] = pcmSamples[sampleOffset + (i * 2)] / 32768.0;
+                                    outR[i] = pcmSamples[sampleOffset + (i * 2) + 1] / 32768.0;
+                                }
+                            } else {
+                                this.stop();
+                                this.emit('onEnded');
+                            }
+                        }
+
+                        if (this.realtimeSongPtr) {
+                            const rtBytes = this.c.readWave(this.realtimeSongPtr, this.audioBufferPtr, pcmBytes, 0);
+                            if (rtBytes > 0) {
+                                const pcmSamples = this.Module.HEAP16;
+                                const samplesRead = Math.min(outL.length, rtBytes >> 2);
+                                const sampleOffset = this.audioBufferPtr >> 1;
+                                for (let i = 0; i < samplesRead; i++) {
+                                    outL[i] += pcmSamples[sampleOffset + (i * 2)] / 32768.0;
+                                    outR[i] += pcmSamples[sampleOffset + (i * 2) + 1] / 32768.0;
+                                }
+                            }
+                        }
+                    };
+
+                    this.scriptNode.connect(this.gainNode);
+                }
+
+                // Preload the default instrument (Acoustic Grand Piano) for the real-time player.
+                // This ensures that the debug buttons and initial MIDI controller input work immediately.
+                return this.setRealtimeInstrument(0, 0, 0).then(() => {
+                    const callbackPtr = this.Module.addFunction((...args) => this._handleMidiEvent(...args), 'viiiiiiii');
+                    this.c.setEventCallback(0, callbackPtr);
+                    this.emit('onInit');
+                    return true;
+                });
+            } else {
+                this.emit('onError', `Initialization failed. Check patch files.`);
+                return false;
+            }
+        });
+    }
+
+    /**
+     * Initializes the real-time synthesizer song instance if it hasn't been created yet.
+     * This prepares an empty song specifically used for real-time MIDI input.
+     * @param {Object} [options={}] - Options for creating the real-time song.
+     * @param {number} [options.bufferSize] - Overrides the configured real-time buffer size.
+     * @returns {Promise<void>}
+     */
+    initRealtimeSong(options = {}) {
+        if (this.realtimeSongPtr) return;
+
+        const midiBytes = [
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x78,
+            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x0C,
+            0x00, 0xFF, 0x51, 0x03, 0xFF, 0xFF, 0xFF,
+            0x81, 0xEA, 0x30, 0x80, 0x00, 0x00,
+            0x00, 0xFF, 0x2F, 0x00
+        ];
+
+        const emptyMidi = new Uint8Array(midiBytes);
+        const midiDataPtr = this.Module._malloc(emptyMidi.length);
+        this.Module.HEAPU8.set(emptyMidi, midiDataPtr);
+
+        const bufferSize = options.bufferSize || this.bufferSizeRealtime;
+
+        let optionsPtr;
+        if (this.c.createOptions) {
+            optionsPtr = this.c.createOptions(this.audioContext.sampleRate, 0x8010, 2, bufferSize);
+        } else {
+            optionsPtr = this.Module._malloc(12);
+            this.Module.setValue(optionsPtr + 0, this.audioContext.sampleRate, 'i32');
+            this.Module.setValue(optionsPtr + 4, 0x8010, 'i16'); // S16LSB, signed 16-bit
+            this.Module.setValue(optionsPtr + 6, 2, 'i8');       // stereo output
+            this.Module.setValue(optionsPtr + 8, bufferSize, 'i32');   // buffer size
+        }
+
+        const streamPtr = this.c.openMemoryStream(midiDataPtr, emptyMidi.length);
+        this.realtimeSongPtr = this.c.loadSong(streamPtr, optionsPtr);
+
+        this.c.closeStream(streamPtr);
+        this.Module._free(midiDataPtr);
+        this.Module._free(optionsPtr);
+
+        if (this.realtimeSongPtr !== 0) {
+            try {
+                this.c.startSong(this.realtimeSongPtr);
+                this._applyChannelEffectsToSong(this.realtimeSongPtr);
+            } catch (error) {
+                this.c.freeSong(this.realtimeSongPtr);
+                this.realtimeSongPtr = 0;
+                throw error;
+            }
+        }
+        return Promise.resolve();
+    }
+
+    /**
+     * Resends active notes to the synthesizer. Useful when seeking or changing instruments
+     * to ensure sustained notes continue playing correctly.
+     * @param {number} [channel=-1] - MIDI channel (0-15) to resend notes for, or -1
+     *   to resend active notes for all channels.
+     * @returns {void}
+     */
+    resendActiveNotes(channel = -1) {
+        if (this.songPtr !== 0) {
+            // The C function expects -1 for all channels.
+            this.c.resendActiveNotes(this.songPtr, channel);
+        }
+        if (this.realtimeSongPtr !== 0) {
+            this.c.resendActiveNotes(this.realtimeSongPtr, channel);
+        }
+    }
+
+    /**
+     * Gets the current value of a specific MIDI controller at a given tick.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} cc - The Control Change (CC) number (0-127).
+     * @param {number} tick - The absolute tick position.
+     * @returns {number} The controller value (0-127), or -1 if the song is not loaded.
+     */
+    getControllerValueAtTick(channel, cc, tick) {
+        if (this.songPtr !== 0) {
+            return this.c.getControllerValueAtTick(this.songPtr, channel, cc, tick);
+        }
+        return -1;
+    }
+
+    /**
+     * Gets the channel volume at a given tick.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} tick - The absolute tick position.
+     * @returns {number} The volume value (0-127), or -1 if no song is loaded or the channel is invalid.
+     */
+    getVolume(channel, tick) {
+        if (this.songPtr === 0 || channel < 0 || channel > 15) return -1;
+        const events = this.tempoMap?.volumeMap?.[channel];
+        if (!events) return this.getControllerValueAtTick(channel, 7, tick);
+
+        let value = 100;
+        for (const event of events) {
+            if (event.tick > tick) break;
+            value = event.value;
+        }
+        return value;
+    }
+
+    /**
+     * Gets the channel expression at a given tick.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} tick - The absolute tick position.
+     * @returns {number} The expression value (0-127), or -1 if no song is loaded or the channel is invalid.
+     */
+    getExpression(channel, tick) {
+        if (this.songPtr === 0 || channel < 0 || channel > 15) return -1;
+        const events = this.tempoMap?.expressionMap?.[channel];
+        if (!events) return this.getControllerValueAtTick(channel, 11, tick);
+
+        let value = 127;
+        for (const event of events) {
+            if (event.tick > tick) break;
+            value = event.value;
+        }
+        return value;
+    }
+
+    /**
+     * Gets the channel pan at a given tick.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} tick - The absolute tick position.
+     * @returns {number} The pan value (0-127), or -1 if no song is loaded or the channel is invalid.
+     */
+    getPan(channel, tick) {
+        if (this.songPtr === 0 || channel < 0 || channel > 15) return -1;
+        const events = this.tempoMap?.panMap?.[channel];
+        if (!events) return this.getControllerValueAtTick(channel, 10, tick);
+
+        let value = 64;
+        for (const event of events) {
+            if (event.tick > tick) break;
+            value = event.value;
+        }
+        return value;
+    }
+
+    /**
+     * Loads a MIDI file into the player and prepares required patches.
+     * @param {File|Uint8Array} midi - The MIDI file data to load.
+     * @param {Function} [callback=null] - Optional callback function called when loading finishes.
+     * @returns {Promise<boolean>} True if loaded successfully, false otherwise.
+     */
+    async load(midi, callback = null) {
+        if (!this.audioContext) {
+            this.emit('onError', "Player not initialized. Call init() first.");
+            if (callback) callback(false);
+            return Promise.resolve(false);
+        }
+        if (this.songPtr !== 0) {
+            this.stop();
+        }
+
+        this.emit('onMidiLoading', midi);
+        this.midiInfo = {};
+
+        let midiDataPromise;
+        if (midi instanceof Uint8Array) {
+            midiDataPromise = Promise.resolve(midi);
+        } else if (typeof midi === 'string') {
+            if (midi.substring(0, 4) === 'MThd') {
+                const md = new Uint8Array(midi.length);
+                for (let i = 0; i < midi.length; i++) md[i] = midi.charCodeAt(i);
+                midiDataPromise = Promise.resolve(md);
+            } else if (midi.indexOf("data:") !== -1) {
+                const dataOffset = midi.indexOf(",") + 1;
+                const binaryString = atob(midi.substring(dataOffset));
+                const md = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) md[i] = binaryString.charCodeAt(i);
+                midiDataPromise = Promise.resolve(md);
+            } else {
+                midiDataPromise = fetch(midi).then(response => {
+                    if (!response.ok) throw new Error("Failed to load MIDI file from URL: " + response.statusText);
+                    return response.arrayBuffer().then(buf => new Uint8Array(buf));
+                });
+            }
+        } else if (midi && typeof midi.arrayBuffer === 'function') {
+            midiDataPromise = midi.arrayBuffer().then(buffer => new Uint8Array(buffer));
+        } else {
+            return Promise.reject(new Error("Unsupported MIDI data format"));
+        }
+
+        return midiDataPromise.then(async (midiData) => {
+            return this._waitForRuntime().then(() => {
+                this.lastMidiData = midiData; // Store for offline rendering reloading
+
+                const midiDataPtr = this.Module._malloc(midiData.length);
+                this.Module.HEAPU8.set(midiData, midiDataPtr);
+
+                let optionsPtr;
+                const bufferSize = this.bufferSize || 4096;
+                if (this.c.createOptions) {
+                    optionsPtr = this.c.createOptions(this.audioContext.sampleRate, 0x8010, 2, bufferSize);
+                } else {
+                    optionsPtr = this.Module._malloc(12);
+                    this.Module.setValue(optionsPtr + 0, this.audioContext.sampleRate, 'i32');
+                    this.Module.setValue(optionsPtr + 4, 0x8010, 'i16'); // S16LSB, signed 16-bit
+                    this.Module.setValue(optionsPtr + 6, 2, 'i8');       // stereo output
+                    this.Module.setValue(optionsPtr + 8, bufferSize, 'i32');   // buffer size
+                }
+
+                const streamPtr = this.c.openMemoryStream(midiDataPtr, midiData.length); // Create memory stream for MIDI data
+                const patchListString = this.c.getRequiredPatches(streamPtr); // Analyze MIDI to get required patches
+
+                return this._loadRequiredPatches(patchListString).then(() => {
+                    this.c.seekStream(streamPtr, 0, 0); // Rewind stream to beginning
+                    this.lastDebugMessage = '';
+                    this.songPtr = this.c.loadSong(streamPtr, optionsPtr); // Load song
+
+                    // Build tempo map for accurate goTo(ticks) functionality.
+                    try {
+                        this.tempoMap = this._buildTempoMap(this.lastMidiData);
+                    } catch (e) {
+                        console.warn("Failed to parse tempo map:", e);
+                    }
+
+                    if (this.songPtr !== 0) {
+                        const callbackPtr = this.Module.addFunction(this._handleMidiEvent.bind(this), 'viiiiiiii');
+                        this.c.setEventCallback(this.songPtr, callbackPtr);
+                    }
+
+                    if (this.songPtr !== 0) {
+                        this.totalDuration = this.c.getTotalTime(this.songPtr) / 1000; // in seconds
+                        // Process initial events at tick 0 to set up the mixer state.
+                        if (this.isSyncEnabled) {
+                            this.seek(0);
+                        }
+                        this.emit('onMidiLoaded', midi, this.totalDuration);
+
+                        this.currentStreamPtr = streamPtr;
+                        this.currentMidiDataPtr = midiDataPtr;
+                        this.currentOptionsPtr = optionsPtr;
+                        this.midiInfo = this.getInfo();
+                        this.totalDuration = this.midiInfo?.duration_sec || 0;
+
+                        if (callback) callback(true);
+                        return true;
+                    } else {
+                        const reason = this.lastDebugMessage || "Unknown error while loading MIDI file.";
+                        this.emit('onError', `Failed to load MIDI file: ${reason}`);
+
+                        this.c.closeStream(streamPtr); // Close memory stream
+                        this.Module._free(midiDataPtr);
+                        this.Module._free(optionsPtr);
+                        if (callback) callback(false);
+                        return false;
+                    }
+                });
+            });
+        });
+    }
+
+    /**
+     * Starts or resumes playback of the currently loaded MIDI song.
+     * @param {number} [offset=0] - The time offset in seconds to start playing from.
+     * @param {Object} [options={}] - Additional playback options.
+     * @param {number} [options.volume] - The song volume (0-100). If omitted, current volume is preserved.
+     * @param {boolean} [options.emitPlaying=true] - Whether to emit 'onPlaying' events during playback.
+     */
+    play(offset = 0, options = {}) {
+        if (!this.audioContext || this.songPtr === 0) return;
+
+        this.c.startSong(this.songPtr); // Prepare song for playback
+        this._applyChannelEffectsToSong(this.songPtr);
+        if (offset > 0) this.seek(offset); // Seek if offset is provided
+
+        // Apply volume if provided (0-100), clamped to valid range.
+        // Must be applied AFTER startSong/seek because those may reset the mixer state.
+        if (typeof options.volume === 'number' && !isNaN(options.volume)) {
+            const clampedVolume = Math.max(0, Math.min(100, options.volume));
+            this.setVolume(clampedVolume);
+        }
+
+        const emitPlaying = options.emitPlaying !== false;
+
+        let lastAudioContextTime = this.audioContext.currentTime;
+        let lastEngineTimeSec = this.c.getTime(this.songPtr) / 1000.0;
+        let smoothTimeSec = lastEngineTimeSec;
+
+        const updatePlaying = () => {
+            if (this.isPlaying && !this.isPaused && this.audioContext.state === 'running' && !this.isSeeking) {
+                const currentTick = this.c.getCurrentTick(this.songPtr);
+                const engineTimeSec = this.c.getTime(this.songPtr) / 1000.0;
+
+                const currentAudioTime = this.audioContext.currentTime;
+                const dt = currentAudioTime - lastAudioContextTime;
+                lastAudioContextTime = currentAudioTime;
+
+                // Sync with the engine when a new block is synthesized or if drift occurs.
+                if (engineTimeSec !== lastEngineTimeSec) {
+                    lastEngineTimeSec = engineTimeSec;
+                    if (Math.abs(smoothTimeSec - engineTimeSec) > 0.15) {
+                        smoothTimeSec = engineTimeSec;
+                    }
+                }
+
+                smoothTimeSec += dt;
+
+                this.emit('onPlaying', currentTick, smoothTimeSec);
+            } else {
+                lastAudioContextTime = this.audioContext.currentTime;
+            }
+            
+            if (this.isPlaying) {
+                this.playingInterval = requestAnimationFrame(updatePlaying);
+            }
+        };
+
+        if (this.playingInterval) {
+            cancelAnimationFrame(this.playingInterval);
+            clearInterval(this.playingInterval);
+            this.playingInterval = null;
+        }
+        
+        if (emitPlaying) {
+            this.playingInterval = requestAnimationFrame(updatePlaying);
+        }
+
+        this.isPlaying = true;
+        this.isPaused = false;
+        this.emit('onPlay');
+
+        this.resume();
+    }
+
+    /**
+     * Loads a MIDI file and automatically starts playing it.
+     * @param {File|Uint8Array} midi - The MIDI file data to load.
+     * @param {number} [offset=0] - The time offset in seconds to start playing from.
+     * @param {Object} [options={}] - Additional playback options.
+     * @returns {Promise<void>}
+     */
+    async loadAndPlay(midi, offset = 0, options = {}) {
+        return this.load(midi).then((success) => {
+            if (success) {
+                this.play(offset, options);
+            }
+        });
+    }
+
+    /**
+     * Updates the currently playing MIDI data on-the-fly without stopping playback.
+     * The player will seamlessly transition to the new event list from its current time.
+     * @param {File|Uint8Array} midi - The new MIDI file data to load.
+     * @returns {Promise<boolean>} True if the update was successful, false otherwise.
+     */
+    async updateMidiData(midi) {
+        if (!this.audioContext || this.songPtr === 0) {
+            this.emit('onError', "Cannot update MIDI. No song is currently loaded or playing.");
+            return Promise.resolve(false);
+        }
+
+        let midiDataPromise;
+        if (midi instanceof Uint8Array) {
+            midiDataPromise = Promise.resolve(midi);
+        } else if (midi && typeof midi.arrayBuffer === 'function') {
+            midiDataPromise = midi.arrayBuffer().then(buffer => new Uint8Array(buffer));
+        } else {
+            return Promise.reject(new Error("Unsupported MIDI data format for update."));
+        }
+
+        return midiDataPromise.then(midiData => {
+            return this._waitForRuntime().then(() => {
+                // We need to create a new stream for the C function.
+                const newDataPtr = this.Module._malloc(midiData.length);
+                this.Module.HEAPU8.set(midiData, newDataPtr);
+                const newStreamPtr = this.c.openMemoryStream(newDataPtr, midiData.length);
+
+                // First, get required patches from the new MIDI data.
+                const patchListString = this.c.getRequiredPatches(newStreamPtr);
+                this.c.seekStream(newStreamPtr, 0, 0); // Rewind for the next step.
+
+                return this._loadRequiredPatches(patchListString).then(() => {
+                    // Now, call the update function.
+                    const result = this.c.updateEvents(this.songPtr, newStreamPtr);
+
+                    // Clean up the stream and memory we created for the update.
+                    this.c.closeStream(newStreamPtr);
+                    this.Module._free(newDataPtr);
+
+                    if (result === 0) {
+                        // Rebuild tempo map dari data MIDI baru, sekaligus refresh totalDuration.
+                        try {
+                            this.tempoMap = this._buildTempoMap(midiData);
+                            this.lastMidiData = midiData; // Simpan untuk renderOffline berikutnya
+                            if (this.tempoMap && typeof this.tempoMap.totalSeconds === 'number' && this.tempoMap.totalSeconds > 0) {
+                                this.totalDuration = this.tempoMap.totalSeconds;
+                            } else {
+                                // Fallback: kalau C-side kebetulan sudah menghitung ulang, pakai itu
+                                this.totalDuration = this.c.getTotalTime(this.songPtr) / 1000;
+                            }
+                        } catch (e) {
+                            console.warn("Failed to rebuild tempo map after update:", e);
+                            this.totalDuration = this.c.getTotalTime(this.songPtr) / 1000;
+                        }
+                        this.emit('onMidiUpdated', midi, this.totalDuration); // 👈 kirim durasi baru ke listener
+                        return true;
+                    }
+                });
+            });
+        });
+    }
+
+    /**
+     * Set the global pitch transpose in semitones (-12 to +12).
+     * @param {number} semitones - The number of semitones to transpose.
+     */
+    setTranspose(semitones) {
+        if (this.songPtr !== 0) {
+            this.c.setTranspose(this.songPtr, semitones);
+        }
+        if (this.realtimeSongPtr !== 0) {
+            this.c.setTranspose(this.realtimeSongPtr, semitones);
+        }
+    }
+
+    /**
+     * Set the master volume for playback.
+     * @param {number} volume - The volume level (0.0 to 1.0).
+     */
+    setMasterVolume(volume) {
+        if (this.gainNode) {
+            // Clamp between 0.0 and 1.0 for safety, although WebAudio allows > 1.0
+            const clamped = Math.max(0, Math.min(1, volume));
+            this.gainNode.gain.value = clamped;
+        }
+    }
+
+    /**
+     * Initializes the optional 10-band graphic equalizer chain.
+     * It is not connected to the output when disabled.
+     */
+    _initializeGraphicEqualizer() {
+        if (!this.audioContext) return;
+        for (const filter of this.graphicEqualizerFilters) filter.disconnect();
+        const chain = this._createGraphicEqualizerChain(this.audioContext, this.sampleRate);
+        this.graphicEqualizerFilters = chain.filters;
+        this.graphicEqualizerInput = chain.input;
+        this.graphicEqualizerOutput = chain.output;
+    }
+
+    _createGraphicEqualizerChain(audioContext, sampleRate) {
+        const filters = [];
+        let previous = null;
+        for (const band of this.graphicEqualizerBands) {
+            const filter = audioContext.createBiquadFilter();
+            filter.type = 'peaking';
+            filter.frequency.value = Math.max(20, Math.min(sampleRate * 0.49, band.frequency));
+            filter.Q.value = Math.max(0.1, band.q == null ? 1.1 : band.q);
+            filter.gain.value = this.graphicEqualizerEnabled
+                ? Math.max(-12, Math.min(12, band.gain || 0))
+                : 0;
+            if (previous) previous.connect(filter);
+            previous = filter;
+            filters.push(filter);
+        }
+        return {
+            filters,
+            input: filters[0] || null,
+            output: filters[filters.length - 1] || null,
+        };
+    }
+
+    _routeGraphicEqualizer() {
+        if (!this.gainNode) return;
+        if (this.graphicEqualizerExternalOutput) {
+            this.graphicEqualizerExternalOutput.disconnect();
+            if (this.graphicEqualizerEnabled && this.graphicEqualizerInput) {
+                this.graphicEqualizerExternalOutput.connect(this.graphicEqualizerInput);
+            } else {
+                this.graphicEqualizerExternalOutput.connect(this.audioContext.destination);
+            }
+            return;
+        }
+        this.gainNode.disconnect();
+        if (this.graphicEqualizerEnabled && this.graphicEqualizerInput) {
+            this.gainNode.connect(this.graphicEqualizerInput);
+            this.graphicEqualizerOutput.connect(this.audioContext.destination);
+        } else {
+            this.gainNode.connect(this.audioContext.destination);
+        }
+    }
+
+    /**
+     * Enables or disables the graphic equalizer.
+     * @param {boolean} enabled - Whether equalizer processing is enabled.
+     */
+    setGraphicEqualizerEnabled(enabled) {
+        this.graphicEqualizerEnabled = enabled === true;
+        if (this.graphicEqualizerEnabled) {
+            for (let i = 0; i < this.graphicEqualizerFilters.length; i++) {
+                const band = this.graphicEqualizerBands[i];
+                this.graphicEqualizerFilters[i].gain.value =
+                    Math.max(-12, Math.min(12, band.gain || 0));
+            }
+        } else {
+            for (const filter of this.graphicEqualizerFilters) filter.gain.value = 0;
+        }
+        this._routeGraphicEqualizer();
+    }
+
+    /**
+     * Updates one or more equalizer bands.
+     * @param {Array<number|Object>|Object} bands - Positional gain array, explicit band-object array, or map keyed by frequency in Hz.
+     */
+    setGraphicEqualizerBands(bands) {
+        if (!bands || typeof bands !== 'object') {
+            throw new TypeError('Graphic equalizer bands must be a non-empty array or frequency map.');
+        }
+
+        const updates = [];
+        if (Array.isArray(bands)) {
+            if (bands.length === 0) {
+                throw new TypeError('Graphic equalizer bands must be a non-empty array or frequency map.');
+            }
+            bands.forEach((band, index) => {
+                if (band === undefined) return;
+                let targetIndex = index;
+                if (band && typeof band === 'object' && Number.isFinite(band.frequency)) {
+                    targetIndex = this.graphicEqualizerBands.findIndex(
+                        existing => existing.frequency === band.frequency
+                    );
+                    if (targetIndex === -1) {
+                        throw new RangeError(`Unsupported graphic equalizer frequency: ${band.frequency} Hz.`);
+                    }
+                }
+                updates.push({ targetIndex, band });
+            });
+        } else {
+            const entries = Object.entries(bands);
+            if (entries.length === 0) {
+                throw new TypeError('Graphic equalizer bands must be a non-empty array or frequency map.');
+            }
+            for (const [frequencyKey, value] of entries) {
+                const frequency = Number(frequencyKey);
+                if (!Number.isFinite(frequency)) {
+                    throw new TypeError(`Invalid graphic equalizer frequency: ${frequencyKey}.`);
+                }
+                const targetIndex = this.graphicEqualizerBands.findIndex(
+                    existing => existing.frequency === frequency
+                );
+                if (targetIndex === -1) {
+                    throw new RangeError(`Unsupported graphic equalizer frequency: ${frequency} Hz.`);
+                }
+                if (typeof value !== 'number' && (!value || typeof value !== 'object' || Array.isArray(value))) {
+                    throw new TypeError('Each frequency-map value must be a gain number or a band object.');
+                }
+                if (value && typeof value === 'object' && value.frequency !== undefined &&
+                    value.frequency !== frequency) {
+                    throw new TypeError(`Band frequency ${value.frequency} Hz does not match map key ${frequency} Hz.`);
+                }
+                if (typeof value === 'number' && !Number.isFinite(value)) {
+                    throw new TypeError(`Graphic equalizer gain for ${frequency} Hz must be finite.`);
+                }
+                updates.push({
+                    targetIndex,
+                    band: typeof value === 'number' ? { frequency, gain: value } : { ...value, frequency },
+                });
+            }
+        }
+        if (updates.length === 0) {
+            throw new TypeError('Graphic equalizer bands must contain at least one band.');
+        }
+
+        const updatedBands = this.graphicEqualizerBands.map(existing => ({...existing}));
+        const updatedIndices = new Set();
+        for (const { targetIndex, band } of updates) {
+            if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= updatedBands.length) {
+                throw new RangeError(`Graphic equalizer band index must be from 0 to ${updatedBands.length - 1}.`);
+            }
+            if (updatedIndices.has(targetIndex)) {
+                throw new TypeError(`Graphic equalizer frequency ${updatedBands[targetIndex].frequency} Hz was specified more than once.`);
+            }
+            updatedIndices.add(targetIndex);
+            const existing = updatedBands[targetIndex];
+            if (typeof band === 'number') {
+                if (!Number.isFinite(band)) {
+                    throw new TypeError('Graphic equalizer gain must be finite.');
+                }
+                updatedBands[targetIndex] = {
+                    ...existing,
+                    gain: Math.max(-12, Math.min(12, band)),
+                };
+                continue;
+            }
+            if (!band || typeof band !== 'object' || Array.isArray(band)) {
+                throw new TypeError('Each graphic equalizer band must be a number or an object.');
+            }
+            updatedBands[targetIndex] = {
+                frequency: Number.isFinite(band.frequency) ? band.frequency : existing.frequency,
+                gain: Number.isFinite(band.gain)
+                    ? Math.max(-12, Math.min(12, band.gain))
+                    : 0,
+                q: Number.isFinite(band.q) ? Math.max(0.1, band.q) : (existing.q || 1.1),
+            };
+        }
+        this.graphicEqualizerBands = updatedBands;
+        if (this.audioContext && this.graphicEqualizerFilters.length) {
+            for (let i = 0; i < this.graphicEqualizerFilters.length; i++) {
+                const band = updatedBands[i];
+                const filter = this.graphicEqualizerFilters[i];
+                filter.frequency.value = Math.max(20, Math.min(this.sampleRate * 0.49, band.frequency));
+                filter.Q.value = Math.max(0.1, band.q == null ? 1.1 : band.q);
+                filter.gain.value = this.graphicEqualizerEnabled
+                    ? Math.max(-12, Math.min(12, band.gain || 0))
+                    : 0;
+            }
+        }
+    }
+
+    /**
+     * Sets the gain of one equalizer band by its index.
+     * @param {number} index - Band index from 0 to 9.
+     * @param {number} gain - Gain in dB, clamped to -12..+12.
+     */
+    setGraphicEqualizerBand(index, gain) {
+        if (!Number.isInteger(index) || index < 0 || index >= this.graphicEqualizerBands.length) {
+            throw new RangeError(`Graphic equalizer band index must be from 0 to ${this.graphicEqualizerBands.length - 1}.`);
+        }
+        if (!Number.isFinite(gain)) throw new TypeError('Graphic equalizer gain must be finite.');
+        const bands = this.graphicEqualizerBands.map(band => ({...band}));
+        bands[index].gain = Math.max(-12, Math.min(12, gain));
+        this.setGraphicEqualizerBands(bands);
+    }
+
+    /**
+     * Enables or disables the equalizer and optionally updates its bands.
+     * @param {boolean} enabled
+     * @param {Array<number|Object>|Object} [bands] - Gains by index or explicit frequency.
+     */
+    setGraphicEqualizer(enabled, bands) {
+        if (typeof enabled !== 'boolean') {
+            throw new TypeError('Graphic equalizer enabled state must be a boolean.');
+        }
+        if (bands !== undefined) this.setGraphicEqualizerBands(bands);
+        this.setGraphicEqualizerEnabled(enabled);
+    }
+
+    /**
+     * Gets a copy of the current equalizer band settings.
+     * @returns {Array<{frequency: number, gain: number, q: number}>}
+     */
+    getGraphicEqualizerBands() {
+        return this.graphicEqualizerBands.map(band => ({...band}));
+    }
+
+    /**
+     * Gets whether equalizer processing is enabled.
+     * @returns {boolean}
+     */
+    isGraphicEqualizerEnabled() {
+        return this.graphicEqualizerEnabled;
+    }
+
+    /**
+     * Routes an external audio node through the equalizer/output path.
+     * Disconnects the node's existing outgoing connections before routing it.
+     * @param {AudioNode|null} outputNode - Node in this player's AudioContext, or null to restore internal routing.
+     */
+    setGraphicEqualizerOutputNode(outputNode) {
+        this.graphicEqualizerExternalOutput = outputNode || null;
+        this._routeGraphicEqualizer();
+    }
+
+    /**
+     * Sets per-channel reverb and chorus send levels.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} [reverb] - Reverb send level from 0 to 127; omitted to leave unchanged.
+     * @param {number} [chorus] - Chorus send level from 0 to 127; omitted to leave unchanged.
+     * @returns {{reverb: number, chorus: number}} The normalized send levels.
+     */
+    setChannelEffects(channel, reverb, chorus) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (reverb === undefined && chorus === undefined) {
+            return this.getChannelEffects(channel);
+        }
+        if (reverb === undefined) {
+            this.setChannelChorusLevel(channel, chorus);
+            return this.getChannelEffects(channel);
+        }
+        if (chorus === undefined) {
+            this.setChannelReverbLevel(channel, reverb);
+            return this.getChannelEffects(channel);
+        }
+        if (!Number.isFinite(reverb) || !Number.isFinite(chorus)) {
+            throw new TypeError('Reverb and chorus levels must be finite numbers.');
+        }
+        const nextReverb = Math.max(0, Math.min(127, Math.round(reverb)));
+        const nextChorus = Math.max(0, Math.min(127, Math.round(chorus)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if ((nextReverb || nextChorus) && this.c && !this.c.setChannelEffects) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
+        }
+        if (this.c && this.c.setChannelEffects) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelEffects(songPtr, channel, nextReverb, nextChorus)) {
+                    throw new Error(`Unable to configure effects for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = {
+            reverb: nextReverb,
+            chorus: nextChorus,
+            brightness: this.channelEffects[channel].brightness ?? 0,
+            bass: this.channelEffects[channel].bass ?? 0
+        };
+        return { ...this.channelEffects[channel] };
+    }
+
+    /**
+     * Sets one channel's reverb send level.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} level - Reverb send level from 0 to 127.
+     * @returns {number} The normalized send level.
+     */
+    setChannelReverbLevel(channel, level) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!Number.isFinite(level)) throw new TypeError('Reverb level must be a finite number.');
+        const normalizedLevel = Math.max(0, Math.min(127, Math.round(level)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if (this.c && !this.c.setChannelReverb) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel reverb. Rebuild it with mid_song_set_channel_reverb.');
+        }
+        if (this.c && this.c.setChannelReverb) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelReverb(songPtr, channel, normalizedLevel)) {
+                    throw new Error(`Unable to configure reverb for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = { ...this.channelEffects[channel], reverb: normalizedLevel };
+        return normalizedLevel;
+    }
+
+    /**
+     * Sets one channel's chorus send level.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} level - Chorus send level from 0 to 127.
+     * @returns {number} The normalized send level.
+     */
+    setChannelChorusLevel(channel, level) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!Number.isFinite(level)) throw new TypeError('Chorus level must be a finite number.');
+        const normalizedLevel = Math.max(0, Math.min(127, Math.round(level)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if (this.c && !this.c.setChannelChorus) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel chorus. Rebuild it with mid_song_set_channel_chorus.');
+        }
+        if (this.c && this.c.setChannelChorus) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelChorus(songPtr, channel, normalizedLevel)) {
+                    throw new Error(`Unable to configure chorus for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = { ...this.channelEffects[channel], chorus: normalizedLevel };
+        return normalizedLevel;
+    }
+
+    /**
+     * Sets the tone/brightness for one MIDI channel.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} brightness - 0-127; 0 adds no treble and 127 adds maximum treble.
+     * @returns {number} The normalized brightness value.
+     */
+    setChannelBrightness(channel, brightness) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!Number.isFinite(brightness)) {
+            throw new TypeError('Brightness must be a finite number.');
+        }
+        const normalizedBrightness = Math.max(0, Math.min(127, Math.round(brightness)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if (this.c && !this.c.setChannelBrightness) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel brightness.');
+        }
+        if (this.c && this.c.setChannelBrightness) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelBrightness(songPtr, channel, normalizedBrightness)) {
+                    throw new Error(`Unable to configure brightness for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = {
+            ...this.channelEffects[channel],
+            brightness: normalizedBrightness
+        };
+        return normalizedBrightness;
+    }
+
+    /**
+     * Sets the bass boost for one MIDI channel.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} bass - 0-127; 0 adds no bass and 127 adds maximum bass.
+     * @returns {number} The normalized bass value.
+     */
+    setChannelBass(channel, bass) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!Number.isFinite(bass)) {
+            throw new TypeError('Bass must be a finite number.');
+        }
+        const normalizedBass = Math.max(0, Math.min(127, Math.round(bass)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if (this.c && !this.c.setChannelBass) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel bass.');
+        }
+        if (this.c && this.c.setChannelBass) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelBass(songPtr, channel, normalizedBass)) {
+                    throw new Error(`Unable to configure bass for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = {
+            ...this.channelEffects[channel],
+            bass: normalizedBass
+        };
+        return normalizedBass;
+    }
+
+    /**
+     * Gets the last explicitly configured reverb and chorus sends for a channel.
+     * MIDI-file automation is processed natively and does not change this saved configuration.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @returns {{reverb: number, chorus: number}}
+     */
+    getChannelEffects(channel) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        return { ...this.channelEffects[channel] };
+    }
+
+    /**
+     * Sets identical per-channel sends on all 16 MIDI channels.
+     * Prefer setChannelEffects() for channel-specific settings.
+     * @param {number} reverb - Reverb send level from 0 to 127.
+     * @param {number} chorus - Chorus send level from 0 to 127.
+     */
+    setEffects(reverb = this.reverbLevel, chorus = this.chorusLevel) {
+        if (!Number.isFinite(reverb) || !Number.isFinite(chorus)) {
+            throw new TypeError('Reverb and chorus levels must be finite numbers.');
+        }
+        const nextReverb = Math.max(0, Math.min(127, Math.round(reverb)));
+        const nextChorus = Math.max(0, Math.min(127, Math.round(chorus)));
+        for (let channel = 0; channel < 16; channel++) {
+            this.setChannelEffects(channel, nextReverb, nextChorus);
+        }
+        this.reverbLevel = nextReverb;
+        this.chorusLevel = nextChorus;
+        return { reverb: nextReverb, chorus: nextChorus };
+    }
+
+    /** Sets the same reverb send level on all channels. */
+    setReverbLevel(level) {
+        return this.setEffects(level, this.chorusLevel).reverb;
+    }
+
+    /** Sets the same chorus send level on all channels. */
+    setChorusLevel(level) {
+        return this.setEffects(this.reverbLevel, level).chorus;
+    }
+
+    /**
+     * Checks whether this runtime includes native per-channel C-core effects.
+     * @returns {boolean}
+     */
+    supportsNativeEffects() {
+        return Boolean(this.c && this.c.setChannelEffects &&
+            this.c.setChannelReverb && this.c.setChannelChorus &&
+            this.c.setChannelBrightness && this.c.setChannelBass);
+    }
+
+    /**
+     * Checks whether this runtime includes native per-channel brightness/bass controls.
+     * @returns {boolean}
+     */
+    supportsNativeToneControl() {
+        return Boolean(this.c && this.c.setChannelBrightness && this.c.setChannelBass);
+    }
+
+    _applyChannelEffectsToSong(songPtr) {
+        if (!songPtr) return true;
+        const configuredChannels = this.channelEffects
+            .map((effects, channel) => ({ ...effects, channel }))
+            .filter(effects => effects.reverb || effects.chorus);
+        if (!configuredChannels.length) return true;
+        if (!this.c || !this.c.setChannelEffects) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
+        }
+        for (const effects of configuredChannels) {
+            if (!this.c.setChannelEffects(songPtr, effects.channel, effects.reverb, effects.chorus)) {
+                throw new Error(`Unable to configure effects for MIDI channel ${effects.channel + 1}.`);
+            }
+        }
+        for (const effects of this.channelEffects) {
+            const channel = this.channelEffects.indexOf(effects);
+            if (this.c.setChannelBrightness &&
+                !this.c.setChannelBrightness(songPtr, channel, effects.brightness)) {
+                throw new Error(`Unable to configure brightness for MIDI channel ${channel + 1}.`);
+            }
+            if (this.c.setChannelBass &&
+                !this.c.setChannelBass(songPtr, channel, effects.bass)) {
+                throw new Error(`Unable to configure bass for MIDI channel ${channel + 1}.`);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Gets the configured external equalizer/output node.
+     * @returns {AudioNode|null} The configured node, or null when internal routing is used.
+     */
+    getGraphicEqualizerOutputNode() {
+        return this.graphicEqualizerExternalOutput;
+    }
+
+    /**
+     * Creates fresh, flat settings for the default 10 equalizer frequencies.
+     * @returns {Array<{frequency: number, gain: number, q: number}>}
+     */
+    getGraphicEqualizerDefaultBands() {
+        return [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map(freq => ({
+            frequency: freq,
+            gain: 0,
+            q: 1.1
+        }));
+    }
+
+    /**
+     * Applies mute/solo logic to all channels, only updating channels whose state has changed.
+     * This prevents unnecessary calls to the C function, reducing audio glitches.
+     * @param {Array<Object>} tracksData - The array of all track data objects.
+     */
+    applyMuteState(tracksData) {
+        if (!this.songPtr && !this.realtimeSongPtr) return;
+
+        const soloChannels = tracksData.filter(t => t.solo && t.type !== 'audio').map(t => t.channel);
+
+        for (let c = 0; c < 16; c++) {
+            const isMutedBySolo = soloChannels.length > 0 ? !soloChannels.includes(c) : false;
+            const isMutedDirectly = tracksData.some(t => t.channel === c && t.muted && t.type !== 'audio');
+            const shouldBeMuted = isMutedBySolo || isMutedDirectly;
+
+            if (this.channelMuteState[c] !== shouldBeMuted) {
+                this.setChannelMute(c, shouldBeMuted);
+                this.channelMuteState[c] = shouldBeMuted;
+            }
+        }
+    }
+
+    /**
+     * Mute or unmute a specific MIDI channel (0-15).
+     * @param {number} channel The MIDI channel (0-15)
+     * @param {boolean} mute True to mute, false to unmute
+     */
+    setChannelMute(channel, mute) {
+        if (this.songPtr !== 0) {
+            this.c.setChannelMute(this.songPtr, channel, mute ? 1 : 0);
+        }
+        if (this.realtimeSongPtr !== 0) {
+            this.c.setChannelMute(this.realtimeSongPtr, channel, mute ? 1 : 0);
+        }
+    }    
+    
+    /**
+     * Mute or unmute a specific MIDI track (0-255).
+     * @param {number} track The MIDI track (0-255)
+     * @param {boolean} mute True to mute, false to unmute
+     */
+    setTrackMute(track, mute) {
+        if (this.songPtr !== 0) {
+            this.c.setTrackMute(this.songPtr, track, mute ? 1 : 0);
+        }
+        if (this.realtimeSongPtr !== 0) {
+            this.c.setTrackMute(this.realtimeSongPtr, track, mute ? 1 : 0);
+        }
+    }
+
+    /**
+     * Instantly kill all currently sounding notes (Panic button).
+     */
+    panic() {
+        if (this.songPtr !== 0) {
+            this.c.panic(this.songPtr);
+        }
+        if (this.realtimeSongPtr !== 0) {
+            this.c.panic(this.realtimeSongPtr);
+        }
+    }
+
+    /**
+     * Get metadata and information about the currently loaded song.
+     * @returns {Object|null} The parsed JSON object with song info, or null if no song is loaded.
+     */
+    getInfo() {
+        if (this.songPtr !== 0) {
+            try {
+                const jsonStr = this.c.getInfoJson(this.songPtr);
+                return JSON.parse(jsonStr);
+            } catch (e) {
+                console.error("Failed to parse song info:", e);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get the number of currently sounding polyphony voices.
+     * @returns {number} Active voices count.
+     */
+    getActiveVoices() {
+        if (this.songPtr !== 0) {
+            return this.c.getActiveVoices(this.songPtr);
+        } else if (this.realtimeSongPtr !== 0) {
+            return this.c.getActiveVoices(this.realtimeSongPtr);
+        }
+        return 0;
+    }
+
+    /**
+     * Renders the currently loaded MIDI song to a WAV Blob offline, without playing it.
+     * Yields to the main thread periodically and emits 'onRenderProgress'.
+     * @param {Object} [options={}] - Options for rendering.
+     * @param {number} [options.sampleRate=44100] - The target sample rate.
+     * @param {boolean} [options.isMono=false] - If true, outputs 1 channel and centers pan.
+     * @param {boolean} [options.isSpatial=false] - If true, applies 3D spatial audio (overrides isMono to false).
+     * @param {boolean} [options.isSpatialInterpolation=false] - If true, interpolates spatial coordinates smoothly.
+     * @param {boolean} [options.monoToStereo=false] - If true, applies stereo widening (Spectral Panning / EQ) to the final output.
+     * @param {number} [options.monoToStereoWeight=5] - The intensity of the stereo widening effect (gain in dB).
+     * @returns {Promise<Blob>} The generated WAV file as a Blob.
+     */
+    renderOffline(options = {}) {
+        if (!this.lastMidiData) return null;
+        const hasConfiguredEffects = this.channelEffects.some(effects => effects.reverb || effects.chorus);
+        const hasMidiEffectAutomation = ['reverbMap', 'chorusMap'].some((mapName) =>
+            this.tempoMap?.[mapName]?.some(channelEvents =>
+                channelEvents.some(event => event.value > 0)
+            )
+        );
+        if ((hasConfiguredEffects || hasMidiEffectAutomation) && !this.supportsNativeEffects()) {
+            const error = new Error('This libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
+            this.emit('onError', error.message);
+            return Promise.reject(error);
+        }
+
+        this.emit('onRenderStart');
+
+        if (this.isPlaying) {
+            this.pause();
+        }
+
+        let { sampleRate = 44100, isMono = false, isSpatial = false, isSpatialInterpolation = false, monoToStereo = false, monoToStereoWeight = 5, soloTrack = -1 } = options;
+        if (isSpatial || monoToStereo) {
+            isMono = false; // Force stereo if spatial or stereo widening is requested
+        }
+
+        // Initialize offline processing parameters
+        const channels = isMono ? 1 : 2;
+
+        const bufferSize = options.bufferSize || 4096;
+
+        // Setup options for libTiMidity reload
+        let optionsPtr;
+        if (this.c.createOptions) {
+            optionsPtr = this.c.createOptions(sampleRate, 0x8010, channels, bufferSize);
+        } else {
+            optionsPtr = this.Module._malloc(12);
+            this.Module.setValue(optionsPtr + 0, sampleRate, 'i32');
+            this.Module.setValue(optionsPtr + 4, 0x8010, 'i16'); // S16LSB, signed 16-bit
+            this.Module.setValue(optionsPtr + 6, channels, 'i8');
+            this.Module.setValue(optionsPtr + 8, bufferSize, 'i32');   // buffer size MUST be i32 to avoid garbage upper bits
+        }
+
+        // Reload song from raw data for offline rendering
+        const midiDataPtr = this.Module._malloc(this.lastMidiData.length);
+        this.Module.HEAPU8.set(this.lastMidiData, midiDataPtr);
+        const streamPtr = this.c.openMemoryStream(midiDataPtr, this.lastMidiData.length);
+
+        // We assume patches are already loaded from the previous normal load()
+        const renderSongPtr = this.c.loadSong(streamPtr, optionsPtr);
+
+        this.c.closeStream(streamPtr);
+        this.Module._free(midiDataPtr);
+        this.Module._free(optionsPtr);
+
+        if (renderSongPtr === 0) {
+            this.emit('onError', "Failed to prepare song for rendering.");
+            return null;
+        }
+
+        // Apply soloTrack if specified (mute all except the soloed track)
+        if (soloTrack >= 0) {
+            if (!this.c.setTrackMute && this.Module.cwrap) {
+                this.c.setTrackMute = this.Module.cwrap('mid_song_set_track_mute', null, ['number', 'number', 'number']);
+            }
+            if (this.c.setTrackMute) {
+                const totalTracks = (this.tempoMap && this.tempoMap.tracksCount) ? this.tempoMap.tracksCount : 256;
+                for (let i = 0; i < totalTracks; i++) {
+                    this.c.setTrackMute(renderSongPtr, i, i === soloTrack ? 0 : 1);
+                }
+            }
+        }
+
+        if (isMono && this.c.forceMonoPan) { // Optional C function we added
+            this.c.forceMonoPan(renderSongPtr);
+        }
+
+        this.c.startSong(renderSongPtr);
+        try {
+            this._applyChannelEffectsToSong(renderSongPtr);
+        } catch (error) {
+            this.c.freeSong(renderSongPtr);
+            this.emit('onError', error.message);
+            return Promise.reject(error);
+        }
+
+        const totalTime = this.c.getTotalTime(renderSongPtr);
+        const durationSeconds = totalTime / 1000.0;
+        const hasReverbSend = this.channelEffects.some(effects => effects.reverb) ||
+            this.tempoMap?.reverbMap?.some(channelEvents => channelEvents.some(event => event.value > 0));
+        const tailSeconds = hasReverbSend ? 2.5 : 1;
+        const renderBufferLength = Math.ceil(sampleRate * (durationSeconds + tailSeconds));
+        let currentTime = 0;
+
+        const pcmBytes = this.bufferSize * channels * 2; // bytes per sample = 2
+        const pcmBufferPtr = this.Module._malloc(pcmBytes);
+
+        const chunks = [];
+        let totalLength = 0;
+
+        // Spatial Audio Setup
+        let offlineCtx = null;
+        let panner = null;
+        let spatialSourceNode = null;
+        let spatialBufferArray = null;
+        let spatialChannelDataL = null;
+        let spatialChannelDataR = null;
+        let spatialOffset = 0;
+        let spatialEvents = []; // To collect CC 20 and CC 21
+
+        let renderCallbackPtr = 0;
+
+        if (isSpatial && durationSeconds > 0) {
+            offlineCtx = new OfflineAudioContext(2, renderBufferLength, sampleRate);
+            panner = offlineCtx.createPanner();
+            panner.panningModel = 'HRTF';
+            panner.distanceModel = 'inverse';
+            // Initial center position
+            panner.positionX.setValueAtTime(0, 0);
+            panner.positionY.setValueAtTime(0, 0);
+            panner.positionZ.setValueAtTime(0, 0);
+
+            // Pre-allocate buffer for the entire song to feed into PannerNode
+            spatialBufferArray = offlineCtx.createBuffer(2, renderBufferLength, sampleRate);
+            spatialChannelDataL = spatialBufferArray.getChannelData(0);
+            spatialChannelDataR = spatialBufferArray.getChannelData(1);
+
+            // Attach callback to capture CC events during readWave loop
+            this._spatialEvents = [];
+            spatialEvents = this._spatialEvents;
+
+            if (!this._offlineCallbackPtr) {
+                this._offlineCallbackPtr = this.Module.addFunction((tick, timeMilisecond, eventStatus, channel, eventType, a, b, textPtr) => {
+                    if (this._spatialEvents && eventType === this.ME_CONTROL_CHANGE) {
+                        if (a === 20 || a === 21) {
+                            this._spatialEvents.push({
+                                time: timeMilisecond / 1000.0,
+                                cc: a,
+                                val: b
+                            });
+                        }
+                    }
+                }, 'viiiiiiii');
+            }
+            renderCallbackPtr = this._offlineCallbackPtr;
+            this.c.setEventCallback(renderSongPtr, renderCallbackPtr);
+        }
+
+        return new Promise((resolve, reject) => {
+            const processChunk = () => {
+                let iterations = 0;
+                while (iterations < 20) { // Render 20 chunks per frame
+                    let bytesReadMain = this.c.readWave(renderSongPtr, pcmBufferPtr, pcmBytes, 1);
+                    if (bytesReadMain > 0) {
+                        const samples = bytesReadMain / 2;
+                        const chunk = new Int16Array(samples);
+                        chunk.set(new Int16Array(this.Module.HEAP16.buffer, pcmBufferPtr, samples));
+                        chunks.push(chunk);
+                        totalLength += chunk.length;
+                    } else if (bytesReadMain <= 0) {
+                        this.Module._free(pcmBufferPtr);
+                        if (renderCallbackPtr !== 0) {
+                            // Do not call removeFunction because it's not exported by default and crashes Emscripten.
+                            // We reuse the _offlineCallbackPtr to prevent memory leak.
+                            this._spatialEvents = null;
+                        }
+                        this.c.freeSong(renderSongPtr); // Free the temporary render instance
+
+                        if (isSpatial && offlineCtx) {
+                            // Cek apakah ada nilai CC selain 64
+                            const hasSpatialData = spatialEvents.some(ev => ev.val !== 64);
+                            if (!hasSpatialData) {
+                                isSpatial = false; // Batalkan spatial processing
+                            }
+                        }
+
+                        // Determine if we need OfflineAudioContext processing
+                        const requiresWebAudio = (isSpatial && offlineCtx) || monoToStereo || this.graphicEqualizerEnabled;
+
+                        if (requiresWebAudio) {
+                            // Pindahkan audio dari raw chunks ke Web Audio Buffer
+                            if (!offlineCtx) {
+                                const outputChannels = isSpatial || monoToStereo ? 2 : channels;
+                                offlineCtx = new OfflineAudioContext(outputChannels, renderBufferLength, sampleRate);
+                                spatialBufferArray = offlineCtx.createBuffer(outputChannels, renderBufferLength, sampleRate);
+                                spatialChannelDataL = spatialBufferArray.getChannelData(0);
+                                spatialChannelDataR = outputChannels > 1 ? spatialBufferArray.getChannelData(1) : null;
+                            }
+
+                            let localOffset = 0;
+                            for (let i = 0; i < chunks.length; i++) {
+                                const chk = chunks[i];
+                                const frameCount = chk.length / channels;
+                                for (let j = 0; j < frameCount; j++) {
+                                    spatialChannelDataL[localOffset + j] = chk[j * channels] / 32768.0;
+                                    if (spatialChannelDataR) {
+                                        spatialChannelDataR[localOffset + j] = chk[j * channels + (channels === 2 ? 1 : 0)] / 32768.0;
+                                    }
+                                }
+                                localOffset += frameCount;
+                            }
+
+                            spatialSourceNode = offlineCtx.createBufferSource();
+                            spatialSourceNode.buffer = spatialBufferArray;
+
+                            let lastNode = spatialSourceNode;
+
+                            if (monoToStereo) {
+                                // EQ-Based Stereo Widening (Spectral Panning)
+                                // Menggunakan EQ berkebalikan untuk L dan R tanpa delay agar tidak ada gema/phase shift.
+                                const splitter = offlineCtx.createChannelSplitter(2);
+                                const merger = offlineCtx.createChannelMerger(2);
+
+                                spatialSourceNode.connect(splitter);
+
+                                // Filter Left (Boost Highs, Cut Lows)
+                                const filterL1 = offlineCtx.createBiquadFilter();
+                                filterL1.type = 'highshelf';
+                                filterL1.frequency.value = 2500;
+                                filterL1.gain.value = monoToStereoWeight;
+                                const filterL2 = offlineCtx.createBiquadFilter();
+                                filterL2.type = 'lowshelf';
+                                filterL2.frequency.value = 400;
+                                filterL2.gain.value = -monoToStereoWeight;
+
+                                // Filter Right (Cut Highs, Boost Lows)
+                                const filterR1 = offlineCtx.createBiquadFilter();
+                                filterR1.type = 'highshelf';
+                                filterR1.frequency.value = 2500;
+                                filterR1.gain.value = -monoToStereoWeight;
+                                const filterR2 = offlineCtx.createBiquadFilter();
+                                filterR2.type = 'lowshelf';
+                                filterR2.frequency.value = 400;
+                                filterR2.gain.value = monoToStereoWeight;
+
+                                // Routing
+                                splitter.connect(filterL1, 0, 0); // Ambil channel kiri
+                                filterL1.connect(filterL2);
+                                filterL2.connect(merger, 0, 0); // Masukkan ke kiri merger
+
+                                splitter.connect(filterR1, 1, 0); // Ambil channel kanan
+                                filterR1.connect(filterR2);
+                                filterR2.connect(merger, 0, 1); // Masukkan ke kanan merger
+
+                                lastNode = merger;
+                                spatialSourceNode.start(0);
+                            } else {
+                                spatialSourceNode.start(0);
+                            }
+
+
+                            if (isSpatial) {
+                                // Apply captured spatial events to the PannerNode
+                                for (let ev of spatialEvents) {
+                                    let mappedValue = ((ev.val - 64) / 64) * 10;
+
+                                    if (ev.cc === 20) {
+                                        if (isSpatialInterpolation) {
+                                            panner.positionY.linearRampToValueAtTime(mappedValue, ev.time);
+                                        } else {
+                                            panner.positionY.setValueAtTime(mappedValue, ev.time);
+                                        }
+                                    } else if (ev.cc === 21) {
+                                        if (isSpatialInterpolation) {
+                                            panner.positionZ.linearRampToValueAtTime(mappedValue, ev.time);
+                                        } else {
+                                            panner.positionZ.setValueAtTime(mappedValue, ev.time);
+                                        }
+                                    }
+                                }
+
+                                if (!panner) {
+                                    panner = offlineCtx.createPanner();
+                                    panner.panningModel = 'HRTF';
+                                    panner.distanceModel = 'inverse';
+                                    panner.positionX.setValueAtTime(0, 0);
+                                    panner.positionY.setValueAtTime(0, 0);
+                                    panner.positionZ.setValueAtTime(0, 0);
+                                }
+
+                                lastNode.connect(panner);
+                                lastNode = panner;
+                            }
+
+                            if (this.graphicEqualizerEnabled) {
+                                const equalizer = this._createGraphicEqualizerChain(offlineCtx, sampleRate);
+                                if (equalizer.input) {
+                                    lastNode.connect(equalizer.input);
+                                    lastNode = equalizer.output;
+                                }
+                            }
+                            lastNode.connect(offlineCtx.destination);
+
+                            offlineCtx.startRendering().then(renderedBuffer => {
+                                const wavBlob = this.audioBufferToWav(renderedBuffer);
+                                this.emit('onRenderComplete', wavBlob);
+                                resolve(wavBlob);
+                            });
+                        } else {
+                            const wavBlob = this._chunksToWav(chunks, totalLength, sampleRate, channels);
+                            this.emit('onRenderComplete', wavBlob);
+                            resolve(wavBlob);
+                        }
+                        return;
+                    }
+                    iterations++;
+                }
+
+                currentTime = this.c.getTime(renderSongPtr);
+                const progress = totalTime > 0 ? Math.min(100, Math.max(0, (currentTime / totalTime) * 100)) : 0;
+                this.emit('onRenderProgress', progress);
+
+                setTimeout(processChunk, 0); // Yield to main thread
+            };
+
+            processChunk();
+        });
+    }
+
+    /**
+     * Resumes the audio context and playback.
+     * @returns {Promise<void>} A promise that resolves when the context is running.
+     */
+    async resume() {
+        if (!this.audioContext) return Promise.resolve();
+
+        const onResumed = () => {
+            // Hanya jalankan logika play jika ada lagu yang dimuat
+            if (this.songPtr !== 0) {
+                if (!this.isPlaying) this.emit('onPlay');
+                else this.emit('onResume');
+                this.isPlaying = true;
+                this.isPaused = false;
+            }
+        };
+
+        if (this.audioContext.state === 'suspended') {
+            return this.audioContext.resume().then(onResumed);
+        } else {
+            onResumed();
+            return Promise.resolve();
+        }
+    }
+
+    /**
+     * Pauses the playback without unloading the song.
+     */
+    pause() {
+        if (!this.audioContext || this.songPtr === 0) return;
+
+        this.isPaused = true;
+        this.emit('onPause');
+    }
+
+    /**
+     * Stops the playback, frees the loaded song from memory, and resets the player state.
+     */
+    stop() {
+        if (this.songPtr !== 0) {
+            if (this.playingInterval) {
+                cancelAnimationFrame(this.playingInterval);
+                clearInterval(this.playingInterval);
+            }
+            this.playingInterval = null;
+            this.c.freeSong(this.songPtr);
+            this.songPtr = 0;
+
+            if (this.currentStreamPtr) { // This stream is owned by the song, but we close it just in case.
+                this.c.closeStream(this.currentStreamPtr); 
+                this.currentStreamPtr = 0;
+            }
+            if (this.currentMidiDataPtr) {
+                this.Module._free(this.currentMidiDataPtr);
+                this.currentMidiDataPtr = 0;
+            }
+            if (this.currentOptionsPtr) {
+                this.Module._free(this.currentOptionsPtr);
+                this.currentOptionsPtr = 0;
+            }
+            this.isPaused = false;
+            this.isPlaying = false;
+            this.emit('onStop');
+            // After stopping a song, the real-time synth might also be affected if it shares resources.
+            // We re-initialize it to ensure it's ready for the next input, which is crucial
+            // for keeping a MIDI controller responsive.
+            this.initRealtimeSong();
+        }
+    }
+
+    /**
+     * Completely shuts down the player, stops playback, and releases the WebAudio context.
+     * @returns {void}
+     */
+    shutdown() {
+        this.stop();
+        if (this.audioBufferPtr) {
+            this.Module._free(this.audioBufferPtr);
+            this.audioBufferPtr = 0;
+            this.audioBufferCapacity = 0;
+        }
+        this.c.exit(); // Shutdown libTiMidity
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+    }
+
+    /**
+     * Seeks to a specific time within the loaded MIDI song.
+     * @param {number} timeInSeconds - The time position to seek to, in seconds.
+     */
+    seek(timeInSeconds) {
+        if (this.songPtr !== 0) {
+            this.emit('onSeek', this.c.getCurrentTick(this.songPtr), timeInSeconds);
+            this.c.seekSong(this.songPtr, timeInSeconds * 1000);
+            if (this.channelEffects.some(effects => effects.reverb || effects.chorus)) {
+                const targetTick = this.timeToTick(timeInSeconds);
+                for (let channel = 0; channel < 16; channel++) {
+                    const configured = this.channelEffects[channel];
+                    const reverbAutomated = this.tempoMap?.reverbMap?.[channel]
+                        ?.some(event => event.tick < targetTick);
+                    const chorusAutomated = this.tempoMap?.chorusMap?.[channel]
+                        ?.some(event => event.tick < targetTick);
+                    if (configured.reverb && !reverbAutomated) {
+                        this.setChannelReverbLevel(channel, configured.reverb);
+                    }
+                    if (configured.chorus && !chorusAutomated) {
+                        this.setChannelChorusLevel(channel, configured.chorus);
+                    }
+                }
+            }
+            this.emit('onSeek', this.c.getCurrentTick(this.songPtr), timeInSeconds);
+        }
+    }
+
+    /**
+     * Sends a MIDI Note On message to the real-time synthesizer.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} program - The MIDI program (instrument) number.
+     * @param {number} pitch - The MIDI note pitch (0-127).
+     * @param {number} [velocity=100] - The note velocity (0-127).
+     * @param {Object} [params={}] - Additional note parameters.
+     */
+    noteOn(channel, program, pitch, velocity = 100, { bank = 0, pan = 64, bend = 8192, modulation = 0, chorus, sustain = 0 } = {}) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!this.realtimeSongPtr || !this.audioContext || this.audioContext.state === 'closed') return;
+
+        if (channel === 9 && this.pendingDrumKitLoad) {
+            return this.pendingDrumKitLoad.then(() => this.noteOn(channel, program, pitch, velocity, {
+                bank, pan, bend, modulation, chorus, sustain
+            }));
+        }
+        if (chorus !== undefined) this.setChannelChorusLevel(channel, chorus);
+        // If realtime synth was freed (e.g. after a stop()), re-initialize it.
+        let p = Promise.resolve();
+        if (!this.realtimeSongPtr) {
+            p = this.initRealtimeSong() || Promise.resolve();
+        }
+
+        return p.then(() => { // Ensure realtime song is ready
+            if (this.audioContext?.state == 'suspended') {
+                this.audioContext.resume();
+            }
+
+            // missingProgram could be the missing program number or drum key
+            const missingProgram = this.c.noteOn(this.realtimeSongPtr, channel, bank, program, pitch, velocity, pan, bend, modulation, sustain);
+
+            if (missingProgram > 0) {
+                const reqProgram = (channel === 9) ? pitch : program;
+                // The required instrument is not loaded. Load it and then retry playing the note.
+                return this.setRealtimeInstrument(channel, reqProgram, bank).then(loaded => {
+                    if (loaded) {
+                        this.c.noteOn(this.realtimeSongPtr, channel, bank, program, pitch, velocity, pan, bend, modulation, sustain);
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * Sends a MIDI Note Off message to the real-time synthesizer.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} pitch - The MIDI note pitch (0-127) to stop.
+     */
+    noteOff(channel, pitch) {
+        if (!this.realtimeSongPtr || !this.audioContext || this.audioContext.state !== 'running') {
+            return;
+        }
+        this.c.noteOff(this.realtimeSongPtr, channel, pitch);
+    }
+
+    /**
+     * Loads and sets an instrument program dynamically for the real-time synth.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} program - The instrument program number.
+     * @param {number} [bank=0] - The instrument bank number.
+     * @returns {Promise<boolean>} True if successfully loaded.
+     */
+    async setRealtimeInstrument(channel, program, bank = 0) {
+        if (!this.realtimeSongPtr) {
+            console.warn("Realtime song not initialized, cannot set instrument.");
+            return false;
+        }
+
+        // This function is the central point for loading patches for the realtime player.
+        const isDrum = channel === 9;
+        const testProgram = isDrum ? 0 : program;
+        const testNote = isDrum ? program : 60;
+
+        // 1. Create a tiny dummy MIDI file in memory to discover which patch file corresponds to this program.
+        const midiBytes = [
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x78, // MThd
+            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x16, // MTrk (length 22)
+            0x00, 0xFF, 0x51, 0x03, 0xFF, 0xFF, 0xFF, // Tempo
+            0x00, (0xB0 | (isDrum ? 9 : 0)), 0x00, bank & 0x7F, // Bank Select MSB (Control Change 0)
+            0x00, (0xC0 | (isDrum ? 9 : 0)), testProgram & 0x7F, // Program Change
+            0x00, (0x90 | (isDrum ? 9 : 0)), testNote & 0x7F, 0x64, // Note On
+            0x00, 0xFF, 0x2F, 0x00 // End of Track
+        ];
+        const dummyMidi = new Uint8Array(midiBytes);
+        const dummyMidiPtr = this.Module._malloc(dummyMidi.length);
+        this.Module.HEAPU8.set(dummyMidi, dummyMidiPtr);
+        const streamPtr = this.c.openMemoryStream(dummyMidiPtr, dummyMidi.length);
+        const patchListString = this.c.getRequiredPatches(streamPtr);
+        this.c.closeStream(streamPtr);
+        this.Module._free(dummyMidiPtr);
+        
+        // 2. Download the required patch file(s) if they are not already in the virtual filesystem.
+        if (patchListString) {
+            return this._loadRequiredPatches(patchListString).then(() => {
+                // 3. Command the C-side to load the patch into the active realtimeSongPtr instance.
+                return this.c.loadProgram(this.realtimeSongPtr, bank, program, isDrum) === 0;
+            });
+        }
+        return Promise.resolve(false);
+    }
+
+    /**
+     * Loads and sets an instrument program dynamically for the main song player.
+     * This is crucial for ensuring instruments changed via the UI are available for playback.
+     * @param {number} channel - The MIDI channel (0-15).
+     * @param {number} program - The instrument program number.
+     * @param {number} [bank=0] - The instrument bank number.
+     * @returns {Promise<boolean>} True if successfully loaded.
+     */
+    async loadInstrumentForSong(channel, program, bank = 0) {
+        const songPtr = this.songPtr;
+        if (!songPtr) {
+            // This can happen if no song is loaded yet. It's not a critical error,
+            // as the instrument will be loaded when the song is loaded.
+            return Promise.resolve(true);
+        }
+
+        const isDrum = channel === 9;
+        const testProgram = isDrum ? 0 : program;
+        const testNote = isDrum ? program : 60;
+
+        // This logic is identical to setRealtimeInstrument, but targets songPtr
+        const midiBytes = [
+            0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x78,
+            0x4D, 0x54, 0x72, 0x6B, 0x00, 0x00, 0x00, 0x16,
+            0x00, 0xFF, 0x51, 0x03, 0xFF, 0xFF, 0xFF,
+            0x00, (0xB0 | (isDrum ? 9 : 0)), 0x00, bank & 0x7F,
+            0x00, (0xC0 | (isDrum ? 9 : 0)), testProgram & 0x7F,
+            0x00, (0x90 | (isDrum ? 9 : 0)), testNote & 0x7F, 0x64,
+            0x00, 0xFF, 0x2F, 0x00
+        ];
+        const dummyMidi = new Uint8Array(midiBytes);
+        const dummyMidiPtr = this.Module._malloc(dummyMidi.length);
+        this.Module.HEAPU8.set(dummyMidi, dummyMidiPtr);
+        const streamPtr = this.c.openMemoryStream(dummyMidiPtr, dummyMidi.length);
+        const patchListString = this.c.getRequiredPatches(streamPtr);
+        this.c.closeStream(streamPtr);
+        this.Module._free(dummyMidiPtr);
+        return this._loadRequiredPatches(patchListString, { bank, isDrum, program }).then(() => {
+            if (this.songPtr !== songPtr) return false;
+            return this.c.loadProgram(songPtr, bank, program, isDrum) === 0;
+        });
+    }
+
+    /**
+     * Loads every defined drum patch in a drumset into the active synth instances.
+     * If the requested drumset is not defined, drumset 0 is used instead.
+     * @param {number} bank - The drumset bank number.
+     * @returns {Promise<number>} The drumset bank that was loaded.
+     */
+    async loadDrumKitFromBank(bank) {
+        if (!Number.isInteger(bank) || bank < 0 || bank > 127) {
+            throw new RangeError('Drumset bank must be an integer between 0 and 127');
+        }
+
+        let drums = await this.getDrumList(bank);
+        let loadedBank = bank;
+        if (drums.length === 0 && bank !== 0) {
+            loadedBank = 0;
+            drums = await this.getDrumList(loadedBank);
+        }
+        if (drums.length === 0) {
+            throw new Error(`No drum instruments are configured for bank ${loadedBank}`);
+        }
+
+        await Promise.all(drums.map(drum => {
+            const file = drum.file.split(/\s+/)[0];
+            return this._loadRequiredPatches(file, {
+                bank: loadedBank,
+                isDrum: true,
+                program: drum.id
+            });
+        }));
+
+        for (const drum of drums) {
+            if (this.realtimeSongPtr && this.c.loadProgram(this.realtimeSongPtr, loadedBank, drum.id, true) !== 0) {
+                throw new Error(`Failed to load drum ${drum.id} from bank ${loadedBank} into the real-time synth`);
+            }
+            if (this.songPtr && this.c.loadProgram(this.songPtr, loadedBank, drum.id, true) !== 0) {
+                throw new Error(`Failed to load drum ${drum.id} from bank ${loadedBank} into the song synth`);
+            }
+        }
+
+        return loadedBank;
+    }
+
+    /**
+     * Broadcasts a general MIDI event (like Pitch Bend, CC) to the active synthesizers.
+     * @param {number} eventType - The Timidity event type constant.
+     * @param {number} channel - The MIDI channel.
+     * @param {number} a - The first parameter of the event.
+     * @param {number} [b=0] - The second parameter of the event.
+     */
+    sendEvent(eventType, channel, a, b = 0) {
+        // Disabled during offline rendering to avoid corrupting the output.
+        if (typeof OfflineAudioContext !== 'undefined' && this.audioContext instanceof OfflineAudioContext) {
+            return;
+        }
+
+        if (eventType === this.ME_REVERB) {
+            return this.setChannelReverbLevel(channel, a);
+        }
+        if (eventType === this.ME_CHORUS) {
+            return this.setChannelChorusLevel(channel, a);
+        }
+        if (eventType === this.ME_BRIGHTNESS) {
+            return this.setChannelBrightness(channel, a);
+        }
+        if (eventType === this.ME_BASS) {
+            return this.setChannelBass(channel, a);
+        }
+
+        if (eventType === this.ME_TONE_BANK && channel === 9) {
+            const previousLoad = this.pendingDrumKitLoad || Promise.resolve();
+            const loadAndSelectBank = async () => {
+                const bank = await this.loadDrumKitFromBank(a);
+                if (this.realtimeSongPtr !== 0) {
+                    this.c.sendEvent(this.realtimeSongPtr, eventType, channel, bank, b);
+                }
+                if (this.songPtr !== 0) {
+                    this.c.sendEvent(this.songPtr, eventType, channel, bank, b);
+                }
+                return bank;
+            };
+            const pendingLoad = previousLoad.then(loadAndSelectBank, loadAndSelectBank);
+            this.pendingDrumKitLoad = pendingLoad;
+            pendingLoad.then(
+                () => {
+                    if (this.pendingDrumKitLoad === pendingLoad) this.pendingDrumKitLoad = null;
+                },
+                () => {
+                    if (this.pendingDrumKitLoad === pendingLoad) this.pendingDrumKitLoad = null;
+                }
+            );
+            return pendingLoad;
+        }
+
+        // Send event to BOTH realtime and main song so it affects any active voices on that channel
+        if (this.realtimeSongPtr !== 0) {
+            this.c.sendEvent(this.realtimeSongPtr, eventType, channel, a, b);
+        }
+        if (this.songPtr !== 0) {
+            this.c.sendEvent(this.songPtr, eventType, channel, a, b);
+        }
+    }
+
+    /**
+     * Processes a raw Web MIDI API message and routes it to the real-time synthesizer.
+     * Automatically handles Note On, Note Off, Pitch Bend, and various Control Changes.
+     * @param {number} selectedChannel - The active channel selected in the UI.
+     * @param {number} bank - The active bank.
+     * @param {number} program - The active program (instrument).
+     * @param {MIDIMessageEvent} event - The Web MIDI API event object.
+     * @param {boolean} [sendBack=false] - If true, emits the event back to UI listeners for visual feedback.
+     */
+    sendMessage(selectedChannel, bank, program, event, sendBack = false) {
+        // Extract command from the MIDI status byte
+        const command = event.data[0] >> 4;
+
+        // Gunakan channel yang dipilih di UI, jangan abaikan input jika channel aslinya berbeda
+        const channel = selectedChannel;
+
+        const note = event.data[1];
+        const velocity = (event.data.length > 2) ? event.data[2] : 0;
+
+        switch (command) {
+            case 9: // Note On
+                if (velocity > 0) {
+                    player.noteOn(channel, program, note, velocity, { bank: bank });
+                } else {
+                    player.noteOff(channel, note);
+                }
+                break;
+            case 8: // Note Off
+                player.noteOff(channel, note);
+                break;
+            case 14: // Pitch Bend
+                player.sendEvent(player.ME_PITCHWHEEL, channel, event.data[1], event.data[2]);
+                break;
+            case 11: // Control Change
+                const cc = event.data[1];
+                const val = event.data[2];
+                if (cc === 7) { // Volume
+                    player.sendEvent(player.ME_MAINVOLUME, channel, val);
+                } else if (cc === 10) { // Pan
+                    player.sendEvent(player.ME_PAN, channel, val);
+                } else if (cc === 64) { // Sustain
+                    player.sendEvent(player.ME_SUSTAIN, channel, val);
+                } else if (cc === 11) { // Expression
+                    player.sendEvent(player.ME_EXPRESSION, channel, val);
+                } else if (cc === 91) { // Reverb send
+                    player.sendEvent(player.ME_REVERB, channel, val);
+                } else if (cc === 93) { // Chorus send
+                    player.sendEvent(player.ME_CHORUS, channel, val);
+                } else if (cc === 74) { // Brightness / treble
+                    player.sendEvent(player.ME_BRIGHTNESS, channel, val);
+                } else if (cc === 31) { // Bass boost
+                    player.sendEvent(player.ME_BASS, channel, val);
+                }
+                break;
+        }
+
+        if (sendBack) {
+            if (command === 9) { // Note On
+                if (velocity > 0) {
+                    this.emit('onNoteOn', { tick: 0, channel: channel, pitch: note, velocity: velocity });
+                } else {
+                    this.emit('onNoteOff', { tick: 0, channel: channel, pitch: note });
+                }
+            } else if (command === 8) { // Note Off
+                this.emit('onNoteOff', { tick: 0, channel: channel, pitch: note });
+            }
+        }
+    }
+
+    /**
+     * Attempts to seek playback to a specific tick position.
+     * Uses the parsed tempo map to convert ticks to absolute time in seconds.
+     * @param {number} ticks - The target tick position.
+     */
+    goTo(ticks) {
+        if (this.noTempoMap()) {
+            this.emit('onError', 'Cannot seek to ticks. Tempo map is not available.');
+            return;
+        }
+
+        let lastEvent = this.tempoMap.timeMap[0];
+        for (const ev of this.tempoMap.timeMap) {
+            if (ev.tick > ticks) break;
+            lastEvent = ev;
+        }
+
+        const deltaTicks = ticks - lastEvent.tick;
+        const deltaTimeSec = (deltaTicks / this.tempoMap.division) * (lastEvent.mpqn / 1000000);
+        const targetTimeSec = lastEvent.timeSec + deltaTimeSec;
+
+        this.seek(targetTimeSec);
+    }
+
+    /**
+     * Converts a time in seconds to an approximate tick position with interpolation.
+     * This is useful for DAW playhead synchronization.
+     * @param {number} seconds - The time in seconds.
+     * @returns {number} The approximate tick position (float).
+     */
+    timeToTick(seconds) {
+        if (this.noTempoMap()) {
+            // Cannot convert time to ticks without a tempo map.
+            return 0;
+        }
+
+        let lastEvent = this.tempoMap.timeMap[0];
+        for (const ev of this.tempoMap.timeMap) {
+            if (ev.timeSec > seconds) break;
+            lastEvent = ev;
+        }
+
+        const deltaTimeSec = seconds - lastEvent.timeSec;
+        const deltaTicks = (deltaTimeSec * 1000000 / lastEvent.mpqn) * this.tempoMap.division;
+        return lastEvent.tick + deltaTicks;
+    }
+
+    /**
+     * Converts a MIDI tick into an absolute beat number (e.g. for a metronome).
+     * @param {number} tick - The absolute tick position.
+     * @returns {number} The absolute beat number (e.g., 0.5, 1.0, 16.0).
+     */
+    tickToBeat(tick) {
+        if (this.noTempoMap()) return 0;
+        let lastSig = this.tempoMap.measureMap[0];
+        for (const sig of this.tempoMap.measureMap) {
+            if (sig.tick > tick) break;
+            lastSig = sig;
+        }
+        const deltaTicks = tick - lastSig.tick;
+        const elapsedBeats = deltaTicks / lastSig.ticksPerBeat;
+        return lastSig.absBeat + elapsedBeats;
+    }
+
+    /**
+     * Converts a MIDI tick into a measure number (e.g. for vocal training sync).
+     * @param {number} tick - The absolute tick position.
+     * @returns {number} The absolute measure number (1-indexed).
+     */
+    tickToMeasure(tick) {
+        if (this.noTempoMap()) return 1;
+        let lastSig = this.tempoMap.measureMap[0];
+        for (const sig of this.tempoMap.measureMap) {
+            if (sig.tick > tick) break;
+            lastSig = sig;
+        }
+        const deltaTicks = tick - lastSig.tick;
+        const elapsedBeats = deltaTicks / lastSig.ticksPerBeat;
+        const elapsedMeasures = elapsedBeats / lastSig.num;
+        return lastSig.measure + elapsedMeasures;
+    }
+
+    /**
+     * Converts a MIDI tick position into absolute time in seconds, using the
+     * parsed tempo map (which accounts for all tempo changes in the song).
+     *
+     * This is the inverse of {@link TimidityPlayer#timeToTick} and is useful for
+     * aligning the audio engine with visual timelines (playhead, lyrics, score
+     * scrolling) when the source of truth is tick-based rather than time-based.
+     *
+     * @param {number} tick - The absolute MIDI tick position.
+     * @returns {number} Time in seconds corresponding to the given tick, or 0
+     *                   if the tempo map is not available.
+     */
+    tickToTime(tick) {
+        if (this.noTempoMap()) return 0;
+
+        let lastEvent = this.tempoMap.timeMap[0];
+        for (const ev of this.tempoMap.timeMap) {
+            if (ev.tick > tick) break;
+            lastEvent = ev;
+        }
+
+        const deltaTicks = tick - lastEvent.tick;
+        const deltaTimeSec = (deltaTicks / this.tempoMap.division) * (lastEvent.mpqn / 1000000);
+        return lastEvent.timeSec + deltaTimeSec;
+    }
+
+    /**
+     * Returns the current playback position as an absolute MIDI tick.
+     *
+     * @returns {number} The current playback position in ticks.
+     */
+    getCurrentTick() {
+        return this.c.getCurrentTick(this.songPtr);
+    }
+
+    /**
+     * Returns the current playback position as an absolute time value in seconds.
+     *
+     * @returns {number} The current playback time in seconds.
+     */
+    getTime() {
+        return this.c.getTime(this.songPtr);
+    }
+
+    /**
+     * Checks if a specific MIDI tick aligns with a metronome click.
+     * @param {number} tick - The absolute tick position.
+     * @returns {Object|null} Metronome data { isClick, isDownbeat, beatNumber, measure } or null if invalid.
+     */
+    getMetronome(tick) {
+        if (this.noTempoMap()) return null;
+        let lastSig = this.tempoMap.measureMap[0];
+        for (const sig of this.tempoMap.measureMap) {
+            if (sig.tick > tick) break;
+            lastSig = sig;
+        }
+
+        const deltaTicks = tick - lastSig.tick;
+        const ticksPerBeat = lastSig.ticksPerBeat;
+
+        // Use a small epsilon for floating point inaccuracies if ticksPerBeat is fractional
+        const beatOffset = deltaTicks % ticksPerBeat;
+        const isClick = (beatOffset === 0 || Math.abs(beatOffset - ticksPerBeat) < 0.001 || beatOffset < 0.001);
+
+        if (!isClick) {
+            return { isClick: false };
+        }
+
+        const elapsedBeats = Math.round(deltaTicks / ticksPerBeat);
+        const beatNumber = (elapsedBeats % lastSig.num) + 1;
+        const isDownbeat = (beatNumber === 1);
+
+        return {
+            isClick: true,
+            isDownbeat: isDownbeat,
+            beatNumber: beatNumber,
+            measure: lastSig.measure + Math.floor(elapsedBeats / lastSig.num)
+        };
+    }
+
+    /**
+     * Checks whether the tempo map is unavailable.
+     *
+     * @returns {boolean} true if tempoMap does not exist
+     *          or does not contain a measureMap, false otherwise.
+     */
+    noTempoMap() {
+        return !this.tempoMap || !this.tempoMap.measureMap;
+    }
+
+    /**
+     * Returns the tempo map generated from the currently loaded song.
+     *
+     * @returns {Object|null} An object containing:
+     *                        {
+     *                          division,
+     *                          timeMap,
+     *                          measureMap,
+     *                          tracksCount,
+     *                          trackNames,
+     *                          trackHasNotes,
+     *                          maxTick,
+     *                          totalSeconds,
+     *                          programMap,
+     *                          bankMsbMap,
+     *                          bankLsbMap
+     *                        },
+     *                        or null if no tempo map is available.
+     */
+    getTempoMap() {
+        return this.tempoMap || null;
+    }
+
+    /**
+     * Sets the master volume of the loaded song.
+     * @param {number} volume - The volume level (usually 0 to 100 or 0 to 127 depending on TiMidity internal scaling).
+     */
+    setVolume(volume) {
+        if (this.songPtr !== 0) {
+            this.c.setVolume(this.songPtr, volume); // Set volume (0-100)
+        }
+    }
+
+    /**
+     * Converts a Web Audio API AudioBuffer into a WAV file blob.
+     * @param {AudioBuffer} buffer - The AudioBuffer to convert.
+     * @returns {Blob} The generated WAV file as a Blob.
+     */
+    audioBufferToWav(buffer) {
+        const channels = buffer.numberOfChannels;
+        const interleaved = new Float32Array(buffer.length * channels);
+        for (let frame = 0; frame < buffer.length; frame++) {
+            for (let channel = 0; channel < channels; channel++) {
+                interleaved[frame * channels + channel] = buffer.getChannelData(channel)[frame];
+            }
+        }
+
+        function floatTo16BitPCM(output, offset, input) {
+            for (let i = 0; i < input.length; i++, offset += 2) {
+                let s = Math.max(-1, Math.min(1, input[i]));
+                output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        const dataView = new DataView(new ArrayBuffer(44 + interleaved.length * 2));
+
+        writeString(dataView, 0, 'RIFF');
+        dataView.setUint32(4, 36 + interleaved.length * 2, true);
+        writeString(dataView, 8, 'WAVE');
+        writeString(dataView, 12, 'fmt ');
+        dataView.setUint32(16, 16, true);
+        dataView.setUint16(20, 1, true);
+        dataView.setUint16(22, channels, true);
+        dataView.setUint32(24, buffer.sampleRate, true);
+        dataView.setUint32(28, buffer.sampleRate * channels * 2, true);
+        dataView.setUint16(32, channels * 2, true);
+        dataView.setUint16(34, 16, true);
+        writeString(dataView, 36, 'data');
+        dataView.setUint32(40, interleaved.length * 2, true);
+        floatTo16BitPCM(dataView, 44, interleaved);
+
+        return new Blob([dataView], { type: 'audio/wav' });
+    }
+
+    /**
+     * Exports audio stems by iteratively rendering selected tracks offline.
+     * @param {number[]} trackList - Array of track numbers to export. If null/empty, exports all tracks.
+     * @param {Object} options - Options to pass to renderOffline (e.g., { sampleRate: 44100, monoToStereo: true }).
+     * @param {Function} callback - Callback function(wavBlob, trackIndex) executed after each stem is rendered.
+     * @returns {Promise<void>} Resolves when all requested stems are exported.
+     */
+    exportStems(trackList, options = {}, callback) {
+        let tracksToExport = trackList;
+
+        if (!tracksToExport || tracksToExport.length === 0) {
+            const totalTracks = (this.tempoMap && this.tempoMap.tracksCount) ? this.tempoMap.tracksCount : 1;
+            tracksToExport = Array.from({ length: totalTracks }, (_, i) => i);
+        }
+
+        let p = Promise.resolve();
+        for (let i = 0; i < tracksToExport.length; i++) {
+            p = p.then(() => {
+                const track = tracksToExport[i];
+                const renderOptions = Object.assign({}, options, { soloTrack: track });
+
+                return this.renderOffline(renderOptions).then(wavBlob => {
+
+                    if (callback && typeof callback === 'function') {
+                        callback(wavBlob, track);
+                    }
+                });
+            });
+        }
+        return p;
+    }
+
+    /**
+     * Formats a time in seconds into a human-readable string (e.g., M:SS or H:MM:SS).
+     * @param {number} seconds - The time in seconds to format.
+     * @param {boolean} [withMiliSecond=false] - Whether to include milliseconds in the output.
+     * @returns {string} The formatted time string.
+     */
+    formatTime(seconds, withMiliSecond = false) {
+        if (isNaN(seconds) || seconds < 0) {
+            if (withMiliSecond) return "0:00.000";
+            else return "0:00";
+        }
+
+        let mills = String(Math.floor((seconds % 1) * 1000)).padStart(3, '0');
+
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+
+        let formatedTime = '';
+
+        if (hrs > 0) {
+            formatedTime = `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        } else {
+            formatedTime = `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        if (withMiliSecond) {
+            formatedTime += `.${mills}`;
+        }
+        return formatedTime;
+    }
+
+    /**
+     * Waits for the WebAssembly runtime to be fully initialized.
+     * @private
+     * @returns {Promise<void>}
+     */
+    _waitForRuntime() {
+        return new Promise((resolve) => { //NOSONAR
+            const check = () => {
+                if (this.Module.timidityReady) {
+                    if (!this.c) this._onRuntimeInitialized();
+                    resolve();
+                } else {
+                    setTimeout(check, 50);
+                }
+            };
+            check();
+        });
+    }
+
+    /**
+     * Loads and parses timidity.cfg to extract bank and drumset information.
+     */
+    async _loadTimidityCfg() {
+        if (this._cfgData) return this._cfgData;
+        if (!this._cfgPromise) {
+            this._cfgPromise = (async () => {
+                let text;
+                if (this.timidityCfgLoader) {
+                    text = await this.timidityCfgLoader();
+                    if (typeof text !== 'string') {
+                        throw new TypeError('timidityCfgLoader must return timidity.cfg contents as a string');
+                    }
+                } else {
+                    const response = await fetch(`${this.patchUrlBase}/timidity.cfg`);
+                    if (!response.ok) throw new Error(`Failed to load timidity.cfg: HTTP ${response.status}`);
+                    text = await response.text();
+                }
+                const banks = new Map();
+                const drums = new Map();
+
+                let currentMode = 'bank';
+                let currentId = 0;
+
+                const lines = text.split('\n');
+                for (let line of lines) {
+                    line = line.replace(/#.*/, '').trim(); // Remove comments
+                    if (!line) continue;
+
+                    const parts = line.split(/\s+/);
+                    if (parts[0] === 'bank') {
+                        currentMode = 'bank';
+                        currentId = parseInt(parts[1], 10);
+                    } else if (parts[0] === 'drumset') {
+                        currentMode = 'drumset';
+                        currentId = parseInt(parts[1], 10);
+                    } else if (parts[0] === 'dir' || parts[0] === 'source') {
+                        // Ignore directory and source directives
+                    } else if (!isNaN(parseInt(parts[0], 10))) {
+                        const id = parseInt(parts[0], 10);
+                        const file = parts.slice(1).join(' ');
+
+                        if (currentMode === 'bank') {
+                            if (!banks.has(currentId)) banks.set(currentId, []);
+                            banks.get(currentId).push({ id: id, file: file });
+                        } else if (currentMode === 'drumset') {
+                            if (!drums.has(currentId)) drums.set(currentId, []);
+                            drums.get(currentId).push({ id: id, file: file });
+                        }
+                    }
+                }
+
+                this._cfgData = { text, banks, drums };
+                return this._cfgData;
+            })().catch(error => {
+                this._cfgPromise = null;
+                console.error('Failed to load timidity.cfg:', error);
+                throw error;
+            });
+        }
+        return this._cfgPromise;
+    }
+
+    /**
+     * Sets or clears the callback used to retrieve timidity.cfg.
+     * @param {Function|null} loader - Callback returning the configuration text,
+     *   optionally asynchronously.
+     */
+    setTimidityCfgLoader(loader) {
+        if (loader !== null && typeof loader !== 'function') {
+            throw new TypeError('timidityCfgLoader must be a function or null');
+        }
+        this.timidityCfgLoader = loader;
+        this._cfgData = null;
+        this._cfgPromise = null;
+    }
+
+    /**
+     * Returns a list of available bank numbers.
+     * @returns {Promise<number[]>} Array of bank IDs.
+     */
+    async getBankList() {
+        return this._loadTimidityCfg().then(data => {
+            return Array.from(data.banks.keys()).sort((a, b) => a - b);
+        });
+    }
+
+    /**
+     * Returns a list of instruments in the specified bank.
+     * @param {number} bank - The bank number.
+     * @returns {Promise<Array<{id: number, file: string}>>} List of instruments.
+     */
+    async getInstrumentList(bank) {
+        return this._loadTimidityCfg().then(data => {
+            const list = data.banks.get(bank) || [];
+            return list.sort((a, b) => a.id - b.id);
+        });
+    }
+
+    /**
+     * Returns a list of drum instruments in the specified drumset (bank).
+     * @param {number} bank - The drumset bank number.
+     * @returns {Promise<Array<{id: number, file: string}>>} List of drums.
+     */
+    async getDrumList(bank) {
+        return this._loadTimidityCfg().then(data => {
+            const list = data.drums.get(bank) || [];
+            return list.sort((a, b) => a.id - b.id);
+        });
+    }
+
+    /**
+     * Returns the active MIDI program (instrument) number for the specified channel
+     * at the given tick position.
+     * Only events that have already occurred (tick <= specified tick) are taken into account.
+     *
+     * @param {number} channel - MIDI channel (0-15).
+     * @param {number} tick    - Absolute tick position.
+     * @returns {number} Program number (0-127), or -1 if the tempo/program map is not available.
+     */
+    getProgram(channel, tick) {
+        if (!this.tempoMap || !this.tempoMap.programMap) return -1;
+        const arr = this.tempoMap.programMap[channel];
+        let result = 0; // default GM program
+        if (arr) {
+            for (const ev of arr) {
+                if (ev.tick > tick) break;
+                result = ev.program;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns the active bank number (Bank Select MSB / CC 0) for the specified channel
+     * at the given tick position.
+     * Only events that have already occurred (tick <= specified tick) are taken into account.
+     *
+     * This value is consistent with the `bank` parameter used by
+     * `setRealtimeInstrument()` and `loadInstrumentForSong()`.
+     *
+     * @param {number} channel - MIDI channel (0-15).
+     * @param {number} tick    - Absolute tick position.
+     * @returns {number} Bank MSB (0-127), or -1 if the tempo/bank map is not available.
+     */
+    getBank(channel, tick) {
+        if (!this.tempoMap || !this.tempoMap.bankMsbMap) return -1;
+        const arr = this.tempoMap.bankMsbMap[channel];
+        let result = 0; // default GM bank MSB
+        if (arr) {
+            for (const ev of arr) {
+                if (ev.tick > tick) break;
+                result = ev.value;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 
+     * @returns Update song duration
+     * @returns {number} Las calculate song duration
+     */
+    updateSongDuration() {
+        // Prioritas 1: nilai akurat dari tempoMap JS
+        if (this.tempoMap && typeof this.tempoMap.totalSeconds === 'number' && this.tempoMap.totalSeconds > 0) {
+            this.totalDuration = this.tempoMap.totalSeconds;
+            return this.totalDuration;
+        }
+        // Fallback: nilai dari C (mungkin stale setelah updateEvents)
+        this.totalDuration = this.c.getTotalTime(this.songPtr) / 1000;
+        return this.totalDuration;
+    }
+}
