@@ -22,7 +22,7 @@ The changes in this release were specifically made to meet the requirements for 
 - Added `mid_create_options` function to dynamically create `MidSongOptions` struct, required for offline rendering capabilities.
 - Added `mid_song_create` function to initialize an empty `MidSong` structure without requiring a MIDI file. Crucial for creating persistent background synthesizers (real-time synths).
 - Added `mid_note_on`, `mid_note_off`, and `mid_send_event` functions in `playmidi.c/h` to inject notes and MIDI Control Change events in *real-time* into the synthesizer engine.
-- Added new parameters to `mid_note_on`: `bank`, `pan`, `bend`, `modulation`, `chorus`, and `sustain` to give the DAW full control over note properties during real-time playback.
+- Added new parameters to `mid_note_on`: `bank`, `pan`, `bend`, `modulation`, and `sustain` to give the DAW full control over note properties during real-time playback. Reverb and chorus are handled as independent channel sends.
 - Added `mid_song_get_required_patches` and `mid_song_get_patch_names` to dynamically analyze a MIDI stream and retrieve a list of required GUS patches before playback.
 - Added `mid_song_load_program` (with an `is_drum` parameter) to dynamically load a specific instrument program into the active synthesizer.
 - Added `mid_song_get_current_tick` to retrieve the current tick position of the playback.
@@ -37,13 +37,15 @@ The changes in this release were specifically made to meet the requirements for 
 - Added `mid_song_get_active_voices` to query the exact number of polyphony voices currently sounding in the synthesizer.
 - Added `mid_song_get_master_peak` to query the highest absolute sample value generated since the last reset, perfect for building a true DAW Master VU/Peak Meter.
 - Added `mid_song_update_events` to allow for hot-swapping the MIDI event list of a currently playing song without interrupting playback. This is crucial for DAWs where users can edit MIDI data in real-time.
-- Added support for **Reverb (MIDI CC 91)**. The engine now processes this control change to apply a simple feedback delay effect, adding depth to the sound.
+- Added per-channel **Reverb (MIDI CC 91)** and **Chorus (MIDI CC 93)** sends. Each effect can be controlled independently through MIDI automation, real-time events, and offline rendering; channel DSP is applied before the master mix.
+- Added `mid_song_set_channel_effects`, `mid_song_set_channel_reverb`, and `mid_song_set_channel_chorus` for combined or independent channel-send updates.
 - Added **Event Callback** hook (`mid_song_set_event_callback`) to forward specific MIDI events (Note On/Off, Control Changes, lyric changes, tempo, meta-events) back to the JavaScript layer during the audio rendering loop.
 - Added **Debug Callback** hook (`mid_set_debug_msg_callback`) and `timi_debug_msg` in `common.c` to bridge internal libTiMidity debug output to the web browser console instead of `stderr`.
 
 **JavaScript API / TimidityPlayer**
 - Exposed all newly added C functions (`mid_song_create`, `mid_note_on`, `mid_song_set_transpose`, `mid_song_set_channel_mute`, `mid_song_set_track_mute`, `mid_song_panic`, `mid_song_get_info_json`, etc.) via Emscripten `cwrap`.
 - Added the `sendEvent()` method to forward DAW slider/control interactions simultaneously to `songPtr` (main song) and `realtimeSongPtr` (real-time synth).
+- Added `setChannelEffects()`, `setChannelReverbLevel()`, `setChannelChorusLevel()`, and `getChannelEffects()` for independent per-channel effect sends. MIDI CC91/CC93 and live DAW events update the selected channel without reloading the song.
 - Added `setTranspose(semitones)` method to globally adjust the pitch of the playback using the new C API.
 - Added `setChannelMute(channel, mute)` method to toggle the mute state of any MIDI channel.
 - Added `setTrackMute(track, mute)` method to toggle the mute state of any MIDI track.
@@ -51,6 +53,7 @@ The changes in this release were specifically made to meet the requirements for 
 - Added `getActiveVoices()` wrappers to feed real-time performance and audio level data to the UI.
 - Added `panic()` method mapped to the new C Panic API.
 - Added a full **Mixer Solo** button logic to the web UI. Selecting Solo on a channel automatically mutes all other un-soloed channels, simulating professional DAW behavior.
+- Added independent Reverb and Chorus faders to every mixer channel strip. Per-channel settings persist in local storage and follow CC91/CC93 automation when mixer synchronization is enabled; numeric value labels were removed to match the other mixer faders.
 - Added `updateMidiData(midi)` method to expose the new C function `mid_song_update_events`, enabling seamless, on-the-fly updates to the MIDI sequence during playback.
 - Added the `initRealtimeSong()` method to create a persistent background *synthesizer* (`realtimeSongPtr`) utilizing the new `mid_song_create` C API.
 - Expanded `renderOffline(options)` to support custom `sampleRate`, `isMono`, `isSpatial`, `isSpatialInterpolation`, and `monoToStereo`.
@@ -69,6 +72,9 @@ The changes in this release were specifically made to meet the requirements for 
 ### Changed
 
 **Behavior & Audio Management**
+- **Per-channel Effects Efficiency**: Chorus modulation uses an interpolated LFO lookup table and single-precision phase/delay math; reverb comb stages are unrolled, and per-sample peak scans were removed from tail tracking. DSP and effect-tail processing skip channels without active voices or pending tails.
+- **Low-latency Mixer Buffer**: Corrected the demo's `bufferSize` option name and set the ScriptProcessor buffer to 512 frames instead of silently using the 4096-frame default.
+- **Build Guidance**: Clarified that the `-O0` asm.js build is for debugging and that real-time playback should use an optimized `-O2` WebAssembly build without `TIMIDITY_DEBUG`.
 - Active-note panning now crossfades to new pan positions over approximately 150 ms instead of switching channels abruptly.
 - **Drum Channel Adjustment**: Modified `DEFAULT_DRUMCHANNELS` in `options.h`. Channel 15 (0-based) is no longer hardcoded as a drum channel and is reverted to a standard melodic instrument channel. The engine now strictly adheres to the General MIDI standard (only 0-indexed Channel 9 is the Drum Channel).
 - **Removal of Silence Trimming**: Modified `readmidi.c` so the engine no longer forcibly discards seconds of silence at the beginning of the song, maintaining strict time alignment with other DAW tracks.

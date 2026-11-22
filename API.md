@@ -20,9 +20,8 @@ Creates a new instance of the TimidityPlayer.
       4095.999 MiB and cannot be lower than memory already allocated by the C core.
       If the loaded libTiMidity build does not provide the memory-limit API, player
       initialization fails with an error.
-    - `options.buffserSize` *(number)*: Buffer size for audio processing. Default value is 4096. 
-      **Note**: A larger buffer size increases stability and reduces glitches, but it also introduces more latency, making real-time response (e.g., when playing notes from a MIDI controller) slower.
-    - `options.bufferSizeRealtime` *(number)* - Buffer size for realtime event (e.g noteOn). Default value is 1024
+    - `options.bufferSize` *(number)*: Web Audio processing buffer size in frames. Default value is `4096`. Smaller values reduce latency but leave less time for each audio callback and may cause dropouts if processing cannot keep up. Supported values are `256`, `512`, `1024`, `2048`, `4096`, `8192`, and `16384`.
+    - `options.bufferSizeRealtime` *(number)*: Internal C-core buffer size for the real-time synthesizer. Default value is `1024`; this is separate from the Web Audio `bufferSize`.
     - `options.sampleRate` *(number)*: Sample rate to render PCM. Default value is 44100.
 
 ---
@@ -353,6 +352,32 @@ player.setGraphicEqualizerOutputNode(null); // Restore internal routing
 
 Gain is clamped to -12..+12 dB. Offline rendering uses the current equalizer configuration; disabling it preserves the existing unfiltered render path.
 
+### Per-channel reverb and chorus
+Reverb and chorus are per-channel MIDI sends, not master-bus effects. MIDI CC91 controls reverb and CC93 controls chorus. The C core applies those controller events during playback and offline rendering. Rebuild the WASM module with the exported per-channel APIs `mid_song_set_channel_effects`, `mid_song_set_channel_reverb`, and `mid_song_set_channel_chorus`.
+
+```javascript
+player.setChannelEffects(0, 48, 32); // Channel 1: reverb 48, chorus 32
+player.setChannelReverbLevel(0, 64);
+player.setChannelChorusLevel(0, 48);
+
+const effects = player.getChannelEffects(0); // { reverb: 64, chorus: 48 }
+const canUseNativeEffects = player.supportsNativeEffects();
+
+// Update a channel immediately during playback without reloading the MIDI file.
+player.sendEvent(player.ME_REVERB, 0, 96);
+player.sendEvent(player.ME_CHORUS, 0, 24);
+```
+
+- `setChannelEffects(channel, reverb, chorus)` updates either or both sends for one MIDI channel (0–15). An omitted level remains unchanged; provided levels are rounded and clamped to `0..127`.
+- `setChannelReverbLevel(channel, level)` and `setChannelChorusLevel(channel, level)` update one send for a channel.
+- `getChannelEffects(channel)` returns a copy of the last explicitly configured levels for that channel. MIDI-file automation is processed in the C core and does not change this saved JavaScript configuration.
+- `sendEvent(ME_REVERB, channel, value)` and `sendEvent(ME_CHORUS, channel, value)` provide immediate channel-specific updates suitable for DAW automation and live MIDI input.
+- `sendMessage()` also routes incoming MIDI CC91 and CC93 directly to the selected channel while playback continues.
+- `setEffects(reverb, chorus)` and the corresponding `setReverbLevel()` / `setChorusLevel()` methods remain as compatibility helpers that apply the same send levels to all 16 channels.
+- `supportsNativeEffects()` reports whether the loaded WASM runtime exports the per-channel C-core APIs, including the independent reverb and chorus setters.
+
+MIDI CC91/CC93 events in a file are honored by both realtime playback and offline rendering. Per-channel DSP runs before channel signals are summed into the output mix; the native renderer includes the effect tail in its PCM output.
+
 ### `setTranspose(semitones)`
 Sets the global pitch transpose.
 - **Parameters:**
@@ -389,7 +414,7 @@ Sends a MIDI Note On message. Dynamically downloads the instrument patch if it h
     - `params.pan` *(number)*: Panning (0-127). Default is `64` (center).
     - `params.bend` *(number)*: Pitch bend (0-16383). Default is `8192` (center).
     - `params.modulation` *(number)*: Modulation wheel (0-127). Default is `0`.
-    - `params.chorus` *(number)*: Chorus depth (0-127). Default is `0`.
+    - `params.chorus` *(number)*: Optional per-channel chorus send (0-127). If omitted, the current channel send is preserved.
     - `params.sustain` *(number)*: Sustain pedal (0-127). Default is `0`.
 
 ### `noteOff(channel, pitch)`
@@ -445,6 +470,8 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
       volumeMap: Array<Array<{ tick, channel, value }>>,        // CC 7
       panMap: Array<Array<{ tick, channel, value }>>,           // CC 10
       expressionMap: Array<Array<{ tick, channel, value }>>,    // CC 11
+      reverbMap: Array<Array<{ tick, channel, value }>>,        // CC 91
+      chorusMap: Array<Array<{ tick, channel, value }>>,        // CC 93
       bankMsbMap: Array<Array<{ tick, channel, value }>>,       // CC 0  (Bank Select MSB)
       bankLsbMap: Array<Array<{ tick, channel, value }>>        // CC 32 (Bank Select LSB)
   }
@@ -452,7 +479,7 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
 - **Notes:**
   - `channelsUsed` is a sorted, duplicate-free array of MIDI channel numbers (0–15). It includes a channel if the MIDI file contains any channel voice event (status 0x8–0xE) on that channel, not only note events. For example, `[0, 9]` means the file uses channels 1 and 10; MIDI channel 10 is index `9`.
   - The map is available after MIDI parsing. For example, read `player.getTempoMap()?.channelsUsed` in an `onMidiLoaded` listener to determine which mixer strips correspond to channels present in the file.
-  - `programMap`, `volumeMap`, `panMap`, `expressionMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending. They are consumed internally by the corresponding program, controller, and bank lookup methods.
+  - `programMap`, `volumeMap`, `panMap`, `expressionMap`, `reverbMap`, `chorusMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending.
   - If the MIDI file does not contain events for a map on a channel, that map's corresponding inner array is empty.
 
 ### `tickToBeat(tick)`
@@ -495,7 +522,7 @@ Checks if a specific MIDI tick aligns exactly with a metronome click.
 - **Returns:** `number` - The number of currently active polyphony voices.
 
 ### `getControllerValueAtTick(channel, cc, tick)`
-- **Returns:** `number` - The controller value (0-127) at the exact tick position.
+- **Returns:** `number` - The controller value (0-127) at the exact tick position. CC91 (reverb send) and CC93 (chorus send) are supported.
 
 ### `getVolume(channel, tick)`
 Gets the channel volume (CC 7) at the given tick.

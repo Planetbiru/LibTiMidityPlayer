@@ -28,7 +28,7 @@ class TimidityPlayer {
      *   the contents of timidity.cfg as text.
      * @param {Function} [options.instrumentLoader] - Optional async patch provider called as
      *   (bank, isDrum, program, file) and expected to return binary GUS patch data.
-     * @param {number} [options.bufferSize] - Buffer size for audio processing. Default value is 1024.
+     * @param {number} [options.bufferSize] - Buffer size for audio processing. Default value is 4096.
      * @param {number} [options.bufferSizeRealtime] - Buffer size for the real-time synthesizer. Default value is 1024.
      * @param {number} [options.sampleRate] - Sample rate to render PCM. Default value is 44100.
      * @param {number} [options.memoryLimitMB] - Maximum memory used by C-core allocations in MiB. Zero means unlimited.
@@ -75,6 +75,9 @@ class TimidityPlayer {
         this.graphicEqualizerInput = null;
         this.graphicEqualizerOutput = null;
         this.graphicEqualizerExternalOutput = null;
+        this.reverbLevel = 0;
+        this.chorusLevel = 0;
+        this.channelEffects = Array.from({ length: 16 }, () => ({ reverb: 0, chorus: 0 }));
         this.audioBufferPtr = 0;
         this.audioBufferCapacity = 0;
         this.songPtr = 0; // Pointer to the C MidSong object
@@ -111,6 +114,8 @@ class TimidityPlayer {
         this.ME_TONE_BANK           = 15;
         this.ME_LYRIC               = 16;
         this.ME_CONTROL_CHANGE      = 17;
+        this.ME_REVERB              = 18;
+        this.ME_CHORUS              = 19;
 
         // If the WebAssembly module has already finished initializing, set up the C bindings immediately.
         if (this.Module.timidityReady) {
@@ -194,7 +199,7 @@ class TimidityPlayer {
             getTime: cwrap('mid_song_get_time', 'number', ['number']),
             getTotalTime: cwrap('mid_song_get_total_time', 'number', ['number']),
             getCurrentTick: cwrap('mid_song_get_current_tick', 'number', ['number']),
-            noteOn: cwrap('mid_note_on', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+            noteOn: cwrap('mid_note_on', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
             noteOff: cwrap('mid_note_off', null, ['number', 'number', 'number']),
             loadProgram: cwrap('mid_song_load_program', 'number', ['number', 'number', 'number', 'number']),
             sendEvent: cwrap('mid_send_event', null, ['number', 'number', 'number', 'number', 'number']),
@@ -210,6 +215,18 @@ class TimidityPlayer {
                 : null,
             malloc: cwrap('malloc', 'number', ['number']),
             createOptions: cwrap('mid_create_options', 'number', ['number', 'number', 'number', 'number']),
+            setEffects: typeof this.Module._mid_song_set_effects === 'function'
+                ? cwrap('mid_song_set_effects', 'number', ['number', 'number', 'number'])
+                : null,
+            setChannelEffects: typeof this.Module._mid_song_set_channel_effects === 'function'
+                ? cwrap('mid_song_set_channel_effects', 'number', ['number', 'number', 'number', 'number'])
+                : null,
+            setChannelReverb: typeof this.Module._mid_song_set_channel_reverb === 'function'
+                ? cwrap('mid_song_set_channel_reverb', 'number', ['number', 'number', 'number'])
+                : null,
+            setChannelChorus: typeof this.Module._mid_song_set_channel_chorus === 'function'
+                ? cwrap('mid_song_set_channel_chorus', 'number', ['number', 'number', 'number'])
+                : null,
         };
 
         this._setupDebugCallback();
@@ -478,6 +495,8 @@ class TimidityPlayer {
      *   volumeMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   panMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   expressionMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   reverbMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   chorusMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   bankMsbMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   bankLsbMap: Array<Array<{tick: number, channel: number, value: number}>>
      * }} Parsed timing, meter, track, and instrumentation metadata for the song.
@@ -493,6 +512,8 @@ class TimidityPlayer {
      *   - `volumeMap[ch]` — Channel Volume (CC 7) events for channel `ch`, sorted by tick.
      *   - `panMap[ch]` — Pan (CC 10) events for channel `ch`, sorted by tick.
      *   - `expressionMap[ch]` — Expression (CC 11) events for channel `ch`, sorted by tick.
+     *   - `reverbMap[ch]` — Reverb send (CC 91) events for channel `ch`, sorted by tick.
+     *   - `chorusMap[ch]` — Chorus send (CC 93) events for channel `ch`, sorted by tick.
      *   - `bankMsbMap[ch]` — Bank Select MSB (CC 0) events for channel `ch`, sorted by tick.
      *   - `bankLsbMap[ch]` — Bank Select LSB (CC 32) events for channel `ch`, sorted by tick.
      * @throws {Error} If the data does not begin with a valid `MThd` header chunk.
@@ -525,6 +546,8 @@ class TimidityPlayer {
         const volumeEvents = [];
         const panEvents = [];
         const expressionEvents = [];
+        const reverbEvents = [];
+        const chorusEvents = [];
         const bankMsbEvents = [];
         const bankLsbEvents = [];
         let maxTick = 0;
@@ -593,6 +616,10 @@ class TimidityPlayer {
                                 panEvents.push({ tick: absTick, channel: ch, value: d2 });
                             } else if (d1 === 11) {
                                 expressionEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 91) {
+                                reverbEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 93) {
+                                chorusEvents.push({ tick: absTick, channel: ch, value: d2 });
                             } else if (d1 === 0) {
                                 bankMsbEvents.push({ tick: absTick, channel: ch, value: d2 });
                             } else if (d1 === 32) {
@@ -623,6 +650,8 @@ class TimidityPlayer {
         const volumeMap = buildChannelMap(volumeEvents);
         const panMap = buildChannelMap(panEvents);
         const expressionMap = buildChannelMap(expressionEvents);
+        const reverbMap = buildChannelMap(reverbEvents);
+        const chorusMap = buildChannelMap(chorusEvents);
         const bankMsbMap = buildChannelMap(bankMsbEvents);
         const bankLsbMap = buildChannelMap(bankLsbEvents);
 
@@ -685,7 +714,7 @@ class TimidityPlayer {
         }
 
         return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, channelsUsed: Array.from(channelsUsed).sort((a, b) => a - b), maxTick, totalSeconds,
-            programMap, volumeMap, panMap, expressionMap, bankMsbMap, bankLsbMap
+            programMap, volumeMap, panMap, expressionMap, reverbMap, chorusMap, bankMsbMap, bankLsbMap
         };
     }
 
@@ -898,7 +927,14 @@ class TimidityPlayer {
         this.Module._free(optionsPtr);
 
         if (this.realtimeSongPtr !== 0) {
-            this.c.startSong(this.realtimeSongPtr);
+            try {
+                this.c.startSong(this.realtimeSongPtr);
+                this._applyChannelEffectsToSong(this.realtimeSongPtr);
+            } catch (error) {
+                this.c.freeSong(this.realtimeSongPtr);
+                this.realtimeSongPtr = 0;
+                throw error;
+            }
         }
         return Promise.resolve();
     }
@@ -1117,6 +1153,7 @@ class TimidityPlayer {
         if (!this.audioContext || this.songPtr === 0) return;
 
         this.c.startSong(this.songPtr); // Prepare song for playback
+        this._applyChannelEffectsToSong(this.songPtr);
         if (offset > 0) this.seek(offset); // Seek if offset is provided
 
         // Apply volume if provided (0-100), clamped to valid range.
@@ -1518,6 +1555,171 @@ class TimidityPlayer {
     }
 
     /**
+     * Sets per-channel reverb and chorus send levels.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} [reverb] - Reverb send level from 0 to 127; omitted to leave unchanged.
+     * @param {number} [chorus] - Chorus send level from 0 to 127; omitted to leave unchanged.
+     * @returns {{reverb: number, chorus: number}} The normalized send levels.
+     */
+    setChannelEffects(channel, reverb, chorus) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (reverb === undefined && chorus === undefined) {
+            return this.getChannelEffects(channel);
+        }
+        if (reverb === undefined) {
+            this.setChannelChorusLevel(channel, chorus);
+            return this.getChannelEffects(channel);
+        }
+        if (chorus === undefined) {
+            this.setChannelReverbLevel(channel, reverb);
+            return this.getChannelEffects(channel);
+        }
+        if (!Number.isFinite(reverb) || !Number.isFinite(chorus)) {
+            throw new TypeError('Reverb and chorus levels must be finite numbers.');
+        }
+        const nextReverb = Math.max(0, Math.min(127, Math.round(reverb)));
+        const nextChorus = Math.max(0, Math.min(127, Math.round(chorus)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if ((nextReverb || nextChorus) && this.c && !this.c.setChannelEffects) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
+        }
+        if (this.c && this.c.setChannelEffects) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelEffects(songPtr, channel, nextReverb, nextChorus)) {
+                    throw new Error(`Unable to configure effects for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = { reverb: nextReverb, chorus: nextChorus };
+        return { ...this.channelEffects[channel] };
+    }
+
+    /**
+     * Sets one channel's reverb send level.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} level - Reverb send level from 0 to 127.
+     * @returns {number} The normalized send level.
+     */
+    setChannelReverbLevel(channel, level) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!Number.isFinite(level)) throw new TypeError('Reverb level must be a finite number.');
+        const normalizedLevel = Math.max(0, Math.min(127, Math.round(level)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if (this.c && !this.c.setChannelReverb) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel reverb. Rebuild it with mid_song_set_channel_reverb.');
+        }
+        if (this.c && this.c.setChannelReverb) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelReverb(songPtr, channel, normalizedLevel)) {
+                    throw new Error(`Unable to configure reverb for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = { ...this.channelEffects[channel], reverb: normalizedLevel };
+        return normalizedLevel;
+    }
+
+    /**
+     * Sets one channel's chorus send level.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} level - Chorus send level from 0 to 127.
+     * @returns {number} The normalized send level.
+     */
+    setChannelChorusLevel(channel, level) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!Number.isFinite(level)) throw new TypeError('Chorus level must be a finite number.');
+        const normalizedLevel = Math.max(0, Math.min(127, Math.round(level)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if (this.c && !this.c.setChannelChorus) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel chorus. Rebuild it with mid_song_set_channel_chorus.');
+        }
+        if (this.c && this.c.setChannelChorus) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelChorus(songPtr, channel, normalizedLevel)) {
+                    throw new Error(`Unable to configure chorus for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = { ...this.channelEffects[channel], chorus: normalizedLevel };
+        return normalizedLevel;
+    }
+
+    /**
+     * Gets the last explicitly configured reverb and chorus sends for a channel.
+     * MIDI-file automation is processed natively and does not change this saved configuration.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @returns {{reverb: number, chorus: number}}
+     */
+    getChannelEffects(channel) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        return { ...this.channelEffects[channel] };
+    }
+
+    /**
+     * Sets identical per-channel sends on all 16 MIDI channels.
+     * Prefer setChannelEffects() for channel-specific settings.
+     * @param {number} reverb - Reverb send level from 0 to 127.
+     * @param {number} chorus - Chorus send level from 0 to 127.
+     */
+    setEffects(reverb = this.reverbLevel, chorus = this.chorusLevel) {
+        if (!Number.isFinite(reverb) || !Number.isFinite(chorus)) {
+            throw new TypeError('Reverb and chorus levels must be finite numbers.');
+        }
+        const nextReverb = Math.max(0, Math.min(127, Math.round(reverb)));
+        const nextChorus = Math.max(0, Math.min(127, Math.round(chorus)));
+        for (let channel = 0; channel < 16; channel++) {
+            this.setChannelEffects(channel, nextReverb, nextChorus);
+        }
+        this.reverbLevel = nextReverb;
+        this.chorusLevel = nextChorus;
+        return { reverb: nextReverb, chorus: nextChorus };
+    }
+
+    /** Sets the same reverb send level on all channels. */
+    setReverbLevel(level) {
+        return this.setEffects(level, this.chorusLevel).reverb;
+    }
+
+    /** Sets the same chorus send level on all channels. */
+    setChorusLevel(level) {
+        return this.setEffects(this.reverbLevel, level).chorus;
+    }
+
+    /**
+     * Checks whether this runtime includes native per-channel C-core effects.
+     * @returns {boolean}
+     */
+    supportsNativeEffects() {
+        return Boolean(this.c && this.c.setChannelEffects &&
+            this.c.setChannelReverb && this.c.setChannelChorus);
+    }
+
+    _applyChannelEffectsToSong(songPtr) {
+        if (!songPtr) return true;
+        const configuredChannels = this.channelEffects
+            .map((effects, channel) => ({ ...effects, channel }))
+            .filter(effects => effects.reverb || effects.chorus);
+        if (!configuredChannels.length) return true;
+        if (!this.c || !this.c.setChannelEffects) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
+        }
+        for (const effects of configuredChannels) {
+            if (!this.c.setChannelEffects(songPtr, effects.channel, effects.reverb, effects.chorus)) {
+                throw new Error(`Unable to configure effects for MIDI channel ${effects.channel + 1}.`);
+            }
+        }
+        return true;
+    }
+
+    /**
      * Gets the configured external equalizer/output node.
      * @returns {AudioNode|null} The configured node, or null when internal routing is used.
      */
@@ -1643,6 +1845,17 @@ class TimidityPlayer {
      */
     renderOffline(options = {}) {
         if (!this.lastMidiData) return null;
+        const hasConfiguredEffects = this.channelEffects.some(effects => effects.reverb || effects.chorus);
+        const hasMidiEffectAutomation = ['reverbMap', 'chorusMap'].some((mapName) =>
+            this.tempoMap?.[mapName]?.some(channelEvents =>
+                channelEvents.some(event => event.value > 0)
+            )
+        );
+        if ((hasConfiguredEffects || hasMidiEffectAutomation) && !this.supportsNativeEffects()) {
+            const error = new Error('This libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
+            this.emit('onError', error.message);
+            return Promise.reject(error);
+        }
 
         this.emit('onRenderStart');
 
@@ -1707,9 +1920,20 @@ class TimidityPlayer {
         }
 
         this.c.startSong(renderSongPtr);
+        try {
+            this._applyChannelEffectsToSong(renderSongPtr);
+        } catch (error) {
+            this.c.freeSong(renderSongPtr);
+            this.emit('onError', error.message);
+            return Promise.reject(error);
+        }
 
         const totalTime = this.c.getTotalTime(renderSongPtr);
         const durationSeconds = totalTime / 1000.0;
+        const hasReverbSend = this.channelEffects.some(effects => effects.reverb) ||
+            this.tempoMap?.reverbMap?.some(channelEvents => channelEvents.some(event => event.value > 0));
+        const tailSeconds = hasReverbSend ? 2.5 : 1;
+        const renderBufferLength = Math.ceil(sampleRate * (durationSeconds + tailSeconds));
         let currentTime = 0;
 
         const pcmBytes = this.bufferSize * channels * 2; // bytes per sample = 2
@@ -1731,7 +1955,7 @@ class TimidityPlayer {
         let renderCallbackPtr = 0;
 
         if (isSpatial && durationSeconds > 0) {
-            offlineCtx = new OfflineAudioContext(2, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
+            offlineCtx = new OfflineAudioContext(2, renderBufferLength, sampleRate);
             panner = offlineCtx.createPanner();
             panner.panningModel = 'HRTF';
             panner.distanceModel = 'inverse';
@@ -1741,7 +1965,7 @@ class TimidityPlayer {
             panner.positionZ.setValueAtTime(0, 0);
 
             // Pre-allocate buffer for the entire song to feed into PannerNode
-            spatialBufferArray = offlineCtx.createBuffer(2, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
+            spatialBufferArray = offlineCtx.createBuffer(2, renderBufferLength, sampleRate);
             spatialChannelDataL = spatialBufferArray.getChannelData(0);
             spatialChannelDataR = spatialBufferArray.getChannelData(1);
 
@@ -1801,8 +2025,8 @@ class TimidityPlayer {
                             // Pindahkan audio dari raw chunks ke Web Audio Buffer
                             if (!offlineCtx) {
                                 const outputChannels = isSpatial || monoToStereo ? 2 : channels;
-                                offlineCtx = new OfflineAudioContext(outputChannels, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
-                                spatialBufferArray = offlineCtx.createBuffer(outputChannels, Math.ceil(sampleRate * durationSeconds) + sampleRate, sampleRate);
+                                offlineCtx = new OfflineAudioContext(outputChannels, renderBufferLength, sampleRate);
+                                spatialBufferArray = offlineCtx.createBuffer(outputChannels, renderBufferLength, sampleRate);
                                 spatialChannelDataL = spatialBufferArray.getChannelData(0);
                                 spatialChannelDataR = outputChannels > 1 ? spatialBufferArray.getChannelData(1) : null;
                             }
@@ -2033,6 +2257,22 @@ class TimidityPlayer {
         if (this.songPtr !== 0) {
             this.emit('onSeek', this.c.getCurrentTick(this.songPtr), timeInSeconds);
             this.c.seekSong(this.songPtr, timeInSeconds * 1000);
+            if (this.channelEffects.some(effects => effects.reverb || effects.chorus)) {
+                const targetTick = this.timeToTick(timeInSeconds);
+                for (let channel = 0; channel < 16; channel++) {
+                    const configured = this.channelEffects[channel];
+                    const reverbAutomated = this.tempoMap?.reverbMap?.[channel]
+                        ?.some(event => event.tick < targetTick);
+                    const chorusAutomated = this.tempoMap?.chorusMap?.[channel]
+                        ?.some(event => event.tick < targetTick);
+                    if (configured.reverb && !reverbAutomated) {
+                        this.setChannelReverbLevel(channel, configured.reverb);
+                    }
+                    if (configured.chorus && !chorusAutomated) {
+                        this.setChannelChorusLevel(channel, configured.chorus);
+                    }
+                }
+            }
             this.emit('onSeek', this.c.getCurrentTick(this.songPtr), timeInSeconds);
         }
     }
@@ -2045,7 +2285,10 @@ class TimidityPlayer {
      * @param {number} [velocity=100] - The note velocity (0-127).
      * @param {Object} [params={}] - Additional note parameters.
      */
-    noteOn(channel, program, pitch, velocity = 100, { bank = 0, pan = 64, bend = 8192, modulation = 0, chorus = 0, sustain = 0 } = {}) {
+    noteOn(channel, program, pitch, velocity = 100, { bank = 0, pan = 64, bend = 8192, modulation = 0, chorus, sustain = 0 } = {}) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
         if (!this.realtimeSongPtr || !this.audioContext || this.audioContext.state === 'closed') return;
 
         if (channel === 9 && this.pendingDrumKitLoad) {
@@ -2053,7 +2296,7 @@ class TimidityPlayer {
                 bank, pan, bend, modulation, chorus, sustain
             }));
         }
-
+        if (chorus !== undefined) this.setChannelChorusLevel(channel, chorus);
         // If realtime synth was freed (e.g. after a stop()), re-initialize it.
         let p = Promise.resolve();
         if (!this.realtimeSongPtr) {
@@ -2066,14 +2309,14 @@ class TimidityPlayer {
             }
 
             // missingProgram could be the missing program number or drum key
-            const missingProgram = this.c.noteOn(this.realtimeSongPtr, channel, bank, program, pitch, velocity, pan, bend, modulation, chorus, sustain);
+            const missingProgram = this.c.noteOn(this.realtimeSongPtr, channel, bank, program, pitch, velocity, pan, bend, modulation, sustain);
 
             if (missingProgram > 0) {
                 const reqProgram = (channel === 9) ? pitch : program;
                 // The required instrument is not loaded. Load it and then retry playing the note.
                 return this.setRealtimeInstrument(channel, reqProgram, bank).then(loaded => {
                     if (loaded) {
-                        this.c.noteOn(this.realtimeSongPtr, channel, bank, program, pitch, velocity, pan, bend, modulation, chorus, sustain);
+                        this.c.noteOn(this.realtimeSongPtr, channel, bank, program, pitch, velocity, pan, bend, modulation, sustain);
                     }
                 });
             }
@@ -2236,6 +2479,13 @@ class TimidityPlayer {
             return;
         }
 
+        if (eventType === this.ME_REVERB) {
+            return this.setChannelReverbLevel(channel, a);
+        }
+        if (eventType === this.ME_CHORUS) {
+            return this.setChannelChorusLevel(channel, a);
+        }
+
         if (eventType === this.ME_TONE_BANK && channel === 9) {
             const previousLoad = this.pendingDrumKitLoad || Promise.resolve();
             const loadAndSelectBank = async () => {
@@ -2314,6 +2564,10 @@ class TimidityPlayer {
                     player.sendEvent(player.ME_SUSTAIN, channel, val);
                 } else if (cc === 11) { // Expression
                     player.sendEvent(player.ME_EXPRESSION, channel, val);
+                } else if (cc === 91) { // Reverb send
+                    player.sendEvent(player.ME_REVERB, channel, val);
+                } else if (cc === 93) { // Chorus send
+                    player.sendEvent(player.ME_CHORUS, channel, val);
                 }
                 break;
         }

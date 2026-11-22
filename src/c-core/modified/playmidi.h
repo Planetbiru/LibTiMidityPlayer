@@ -50,6 +50,9 @@
 #define ME_ALL_NOTES_OFF	14
 #define ME_TONE_BANK	15
 #define ME_LYRIC	16
+#define ME_CONTROL_CHANGE 17
+#define ME_REVERB	18
+#define ME_CHORUS	19
 
 #define ME_EOT		99
 
@@ -73,8 +76,14 @@
 #define ISDRUMCHANNEL(s, c) (((s)->drumchannels & (1<<(c))))
 
 /* Real-time event functions */
-extern int mid_note_on(MidSong *song, int channel, int bank, int program, int note, int velocity, int pan, int bend, int modulation, int chorus, int sustain);
+extern int mid_note_on(MidSong *song, int channel, int bank, int program, int note, int velocity, int pan, int bend, int modulation, int sustain);
 extern void mid_note_off(MidSong *song, int channel, int note);
 extern void mid_send_event(MidSong *song, int type, int channel, int a, int b);
+extern int mid_song_set_channel_effects(MidSong *song, int channel, int reverb, int chorus);
+extern int mid_song_set_channel_reverb(MidSong *song, int channel, int reverb);
+extern int mid_song_set_channel_chorus(MidSong *song, int channel, int chorus);
+extern int mid_song_prepare_effects(MidSong *song, int channel);
+extern int mid_song_set_effects(MidSong *song, int reverb, int chorus);
+extern void mid_song_free_effects(MidSong *song);
 
 #endif /* TIMIDITY_PLAYMIDI_H */
