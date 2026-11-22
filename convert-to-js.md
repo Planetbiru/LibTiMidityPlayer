@@ -12,6 +12,7 @@ cd emsdk
 The `-O0 -DTIMIDITY_DEBUG -s WASM=0` command is for debugging only and may
 stutter during real-time playback with channel effects. For production, use
 `-O2 -s WASM=1` and omit `-DTIMIDITY_DEBUG`.
+Do not use `-O3` for asm.js because it may rename functions, making them inaccessible from JavaScript.
 
 ```bash
 emcc common.c instrum.c mix.c output.c playmidi.c readmidi.c tables.c timidity.c stream.c resample.c -O0 -DTIMIDITY_DEBUG -s WASM=0 -o ..\js-bindings\libtimidity.js ^
@@ -43,8 +44,6 @@ emcc common.c instrum.c mix.c output.c playmidi.c readmidi.c tables.c timidity.c
   -s ALLOW_TABLE_GROWTH=1
 
 ```
-
-
 
 Here’s the updated documentation with the **warning about `-O3`** included:
 
@@ -103,7 +102,7 @@ Run this from the repository root in a Windows Command Prompt with Emscripten
 activated. It writes the optimized loader and matching WASM binary to
 `src\c-core\js-bindings`.
 
-```bat
+```bash
 cd /d src\c-core\modified
 
 emcc common.c instrum.c mix.c output.c playmidi.c readmidi.c tables.c timidity.c stream.c resample.c ^
