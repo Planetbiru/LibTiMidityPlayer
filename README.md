@@ -23,7 +23,7 @@ This project provides JavaScript bindings for libTiMidity. The bindings are lice
 Modified C source code is included in src/c-core/modified and distributed under MIT, while original libTiMidity code remains under LGPL/Artistic
 
 > **💡 GUS Patch Info:** 
-> Want to create, edit, or import **GUS Patch** (.pat) files to use here? Please visit the **[GUS Patch Editor](https://composer.planetbiru.com/instrument-editor/)**.
+> Want to create, edit, or import **GUS Patch** (.pat) files to use here? Please visit the **[Planetbiru Instrument Creator](https://composer.planetbiru.com/instrument-creator/)**.
 
 ## Overview
 
