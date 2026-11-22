@@ -2068,9 +2068,11 @@
         const controllerMapNames = {
             7: 'volumeMap',
             10: 'panMap',
-            11: 'expressionMap'
+            11: 'expressionMap',
+            74: 'brightnessMap',
+            31: 'bassMap'
         };
-        const controllerDefaultValues = { 7: 100, 10: 64, 11: 127 };
+        const controllerDefaultValues = { 7: 100, 10: 64, 11: 127, 74: 0, 31: 0 };
 
         function getCurrentSongTick() {
             if (!player || player.songPtr === 0) return 0;
@@ -2451,9 +2453,10 @@
             const reverbStorageKey = 'timidityPlayerReverbLevel';
             const chorusStorageKey = 'timidityPlayerChorusLevel';
             const channelEffectsStorageKey = 'timidityPlayerChannelEffects';
-            const savedChannelEffects = Array.from({ length: 16 }, () => ({ reverb: 0, chorus: 0 }));
-            const mixerEffectControls = { reverb: [], chorus: [] };
+            const savedChannelEffects = Array.from({ length: 16 }, () => ({ reverb: 0, chorus: 0, brightness: 0, bass: 0 }));
+            const mixerEffectControls = { reverb: [], chorus: [], brightness: [], bass: [] };
             let channelEffectsReady = false;
+            let toneControlReady = false;
             let savedEqualizerBands = null;
             let hasSavedEqualizerBands = false;
             const normalizeEffectLevel = (value) => {
@@ -2478,6 +2481,8 @@
                             savedChannelEffects[channel] = {
                                 reverb: normalizeEffectLevel(effects.reverb),
                                 chorus: normalizeEffectLevel(effects.chorus),
+                                brightness: normalizeEffectLevel(effects.brightness === undefined ? 0 : effects.brightness),
+                                bass: normalizeEffectLevel(effects.bass === undefined ? 0 : effects.bass),
                             };
                         }
                     });
@@ -2488,7 +2493,7 @@
                         const reverb = normalizeEffectLevel(oldReverb);
                         const chorus = normalizeEffectLevel(oldChorus);
                         for (let channel = 0; channel < 16; channel++) {
-                            savedChannelEffects[channel] = { reverb, chorus };
+                            savedChannelEffects[channel] = { reverb, chorus, brightness: 0, bass: 0 };
                         }
                     }
                 }
@@ -2509,6 +2514,7 @@
                     button.disabled = false;
                 });
                 const effectsSupported = player.supportsNativeEffects();
+                const toneControlSupported = player.supportsNativeToneControl();
                 let effectsReady = effectsSupported;
                 if (effectsSupported) {
                     try {
@@ -2522,17 +2528,41 @@
                 } else {
                     effectsSupportNotice.textContent = 'Per-channel reverb and chorus require a rebuilt WASM module with the per-channel effects APIs.';
                 }
+                if (toneControlSupported) {
+                    try {
+                        savedChannelEffects.forEach((effects, channel) => {
+                            player.setChannelBrightness(channel, effects.brightness);
+                            player.setChannelBass(channel, effects.bass);
+                        });
+                        toneControlReady = true;
+                    } catch (error) {
+                        effectsSupportNotice.textContent = `Unable to configure channel tone controls: ${error.message}`;
+                    }
+                }
                 channelEffectsReady = effectsReady;
                 [...mixerEffectControls.reverb, ...mixerEffectControls.chorus]
                     .forEach((control) => { control.disabled = !channelEffectsReady; });
+                [...mixerEffectControls.brightness, ...mixerEffectControls.bass]
+                    .forEach((control) => { control.disabled = !toneControlReady; });
             });
             player.init();
 
             const saveChannelEffect = (channel, effect, level) => {
-                if (!channelEffectsReady) return;
+                if (effect === 'reverb' || effect === 'chorus') {
+                    if (!channelEffectsReady) return;
+                } else if (!toneControlReady) {
+                    return;
+                }
                 try {
-                    const eventType = effect === 'reverb' ? player.ME_REVERB : player.ME_CHORUS;
-                    const normalizedLevel = player.sendEvent(eventType, channel, level);
+                    let normalizedLevel;
+                    if (effect === 'brightness') {
+                        normalizedLevel = player.sendEvent(player.ME_BRIGHTNESS, channel, level);
+                    } else if (effect === 'bass') {
+                        normalizedLevel = player.sendEvent(player.ME_BASS, channel, level);
+                    } else {
+                        const eventType = effect === 'reverb' ? player.ME_REVERB : player.ME_CHORUS;
+                        normalizedLevel = player.sendEvent(eventType, channel, level);
+                    }
                     savedChannelEffects[channel] = {
                         ...savedChannelEffects[channel],
                         [effect]: normalizedLevel,
@@ -3257,6 +3287,16 @@
                         <label class="knob-label" for="chorus-${i}">CHO</label>
                         <input type="range" class="knob mixer-effect" id="chorus-${i}" data-effect="chorus" min="0" max="127" value="${savedChannelEffects[i].chorus}" disabled aria-label="Channel ${i + 1} chorus send">
                     </div>
+
+                    <div class="knob-track">
+                        <label class="knob-label" for="brightness-${i}">BRT</label>
+                        <input type="range" class="knob mixer-effect" id="brightness-${i}" data-effect="brightness" min="0" max="127" value="${savedChannelEffects[i].brightness}" disabled aria-label="Channel ${i + 1} brightness">
+                    </div>
+
+                    <div class="knob-track">
+                        <label class="knob-label" for="bass-${i}">BASS</label>
+                        <input type="range" class="knob mixer-effect" id="bass-${i}" data-effect="bass" min="0" max="127" value="${savedChannelEffects[i].bass}" disabled aria-label="Channel ${i + 1} bass">
+                    </div>
                     
                     <div class="mixer-channel-actions">
                         <button class="solo-btn" id="solo-btn-${i}">SOLO</button>
@@ -3281,13 +3321,23 @@
 
                 mixerEffectControls.reverb[i] = document.getElementById(`reverb-${i}`);
                 mixerEffectControls.chorus[i] = document.getElementById(`chorus-${i}`);
+                mixerEffectControls.brightness[i] = document.getElementById(`brightness-${i}`);
+                mixerEffectControls.bass[i] = document.getElementById(`bass-${i}`);
                 mixerEffectControls.reverb[i].disabled = !channelEffectsReady;
                 mixerEffectControls.chorus[i].disabled = !channelEffectsReady;
+                mixerEffectControls.brightness[i].disabled = !toneControlReady;
+                mixerEffectControls.bass[i].disabled = !toneControlReady;
                 mixerEffectControls.reverb[i].addEventListener('input', (e) => {
                     saveChannelEffect(i, 'reverb', Number(e.target.value));
                 });
                 mixerEffectControls.chorus[i].addEventListener('input', (e) => {
                     saveChannelEffect(i, 'chorus', Number(e.target.value));
+                });
+                mixerEffectControls.brightness[i].addEventListener('input', (e) => {
+                    saveChannelEffect(i, 'brightness', Number(e.target.value));
+                });
+                mixerEffectControls.bass[i].addEventListener('input', (e) => {
+                    saveChannelEffect(i, 'bass', Number(e.target.value));
                 });
 
                 document.getElementById(`vol-${i}`).addEventListener('input', (e) => {
@@ -3384,6 +3434,10 @@
                         mixerEffectControls.reverb[event.channel].value = event.a;
                     } else if (event.eventType === player.ME_CHORUS && mixerEffectControls.chorus[event.channel]) {
                         mixerEffectControls.chorus[event.channel].value = event.a;
+                    } else if (event.eventType === player.ME_BRIGHTNESS && mixerEffectControls.brightness[event.channel]) {
+                        mixerEffectControls.brightness[event.channel].value = event.a;
+                    } else if (event.eventType === player.ME_BASS && mixerEffectControls.bass[event.channel]) {
+                        mixerEffectControls.bass[event.channel].value = event.a;
                     }
                 }
 

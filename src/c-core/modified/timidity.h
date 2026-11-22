@@ -261,6 +261,18 @@ extern "C" {
   TIMI_EXPORT extern int mid_song_set_channel_chorus (MidSong *song,
                                                        int channel,
                                                        int chorus);
+/* Set per-channel brightness/tone control (0-127). 0 is no boost,
+ * and higher values emphasize treble.
+ */
+  TIMI_EXPORT extern int mid_song_set_channel_brightness (MidSong *song,
+                                                           int channel,
+                                                           int brightness);
+/* Set per-channel bass boost (0-127). 0 is no boost and higher values
+ * emphasize low frequencies.
+ */
+  TIMI_EXPORT extern int mid_song_set_channel_bass (MidSong *song,
+                                                     int channel,
+                                                     int bass);
 
 /* Set the same reverb and chorus sends on every channel (compatibility API).
  */

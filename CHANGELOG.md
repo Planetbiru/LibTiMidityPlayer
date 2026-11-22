@@ -72,6 +72,8 @@ The changes in this release were specifically made to meet the requirements for 
 ### Changed
 
 **Behavior & Audio Management**
+- Added per-channel **Brightness** (`CC74`) and **Bass** (`CC31`) tone controls. Both default to `0`, meaning no boost; values `1..127` increase treble or bass. Controls are independent, work in realtime and offline rendering, and are available through C/JavaScript channel APIs.
+- Fixed MIDI-file brightness/bass automation so CC74/CC31 events update the per-channel DSP during playback and offline rendering; bass processing also runs when brightness is left at its default.
 - **Per-channel Effects Efficiency**: Chorus modulation uses an interpolated LFO lookup table and single-precision phase/delay math; reverb comb stages are unrolled, and per-sample peak scans were removed from tail tracking. DSP and effect-tail processing skip channels without active voices or pending tails.
 - **Low-latency Mixer Buffer**: Corrected the demo's `bufferSize` option name and set the ScriptProcessor buffer to 512 frames instead of silently using the 4096-frame default.
 - **Build Guidance**: Clarified that the `-O0` asm.js build is for debugging and that real-time playback should use an optimized `-O2` WebAssembly build without `TIMIDITY_DEBUG`.
