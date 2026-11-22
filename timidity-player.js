@@ -890,7 +890,7 @@ class TimidityPlayer {
                 // Preload the default instrument (Acoustic Grand Piano) for the real-time player.
                 // This ensures that the debug buttons and initial MIDI controller input work immediately.
                 return this.setRealtimeInstrument(0, 0, 0).then(() => {
-                    const callbackPtr = this.Module.addFunction((...args) => this._handleMidiEvent(...args), 'viiiiippp');
+                    const callbackPtr = this.Module.addFunction((...args) => this._handleMidiEvent(...args), 'viiiiiiii');
                     this.c.setEventCallback(0, callbackPtr);
                     this.emit('onInit');
                     return true;
@@ -1125,7 +1125,7 @@ class TimidityPlayer {
                     }
 
                     if (this.songPtr !== 0) {
-                        const callbackPtr = this.Module.addFunction(this._handleMidiEvent.bind(this), 'viiiiiii');
+                        const callbackPtr = this.Module.addFunction(this._handleMidiEvent.bind(this), 'viiiiiiii');
                         this.c.setEventCallback(this.songPtr, callbackPtr);
                     }
 
@@ -2091,7 +2091,7 @@ class TimidityPlayer {
                             });
                         }
                     }
-                }, 'viiiiippp');
+                }, 'viiiiiiii');
             }
             renderCallbackPtr = this._offlineCallbackPtr;
             this.c.setEventCallback(renderSongPtr, renderCallbackPtr);

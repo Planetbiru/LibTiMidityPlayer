@@ -4,7 +4,7 @@ This is a WebAssembly port of the `libTiMidity` MIDI synthesizer engine, equippe
 
 ## Live Demo
 
-Explore the player in your browser: [LibTiMidityPlayer Live Demo](https://planetbiru.github.io/LibTiMidityPlayer/).
+Explore the player in your browser: [LibTiMidityPlayer Live Demo (asm.js)](https://planetbiru.github.io/LibTiMidityPlayer/index.html) or [LibTiMidityPlayer Live Demo (wasm)](https://planetbiru.github.io/LibTiMidityPlayer/wasm.html).
 
 ## Requirements
 
