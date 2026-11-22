@@ -15,7 +15,19 @@ It does not modify `TimidityPlayer`; it adds a layer on top. All existing Timidi
 <script src="song-player.js"></script>
 ```
 
-`window.SongPlayer` is created. Requires the WASM `Module` to be present (i.e. `timidity-player.js` + `libtimidity.js` already loaded).
+For WebAssembly, load the WASM-specific wrappers and module instead:
+
+```html
+<script>window.patchUrlBase = '.../gus-patch';</script>
+<script src="timidity-player.wasm.js"></script>
+<script src="libtimidity.wasm.js"></script>
+<script src="song-player.wasm.js"></script>
+```
+
+In either case, load the `TimidityPlayer` wrapper and its matching module
+before the corresponding `SongPlayer` script. The WASM loader also requires
+`libtimidity.wasm.wasm` beside `libtimidity.wasm.js` by default. Do not load
+both runtime variants on the same page.
 
 ---
 
