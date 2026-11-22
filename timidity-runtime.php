@@ -57,7 +57,7 @@ $timidityAssetBase = isset($timidityAssetBase) ? (string) $timidityAssetBase : '
 $timidityAssetBase = rtrim($timidityAssetBase, '/') . '/';
 
 if ($timidityPlayerRuntime === 'wasm') {
-    $scripts = ['timidity-player.wasm.js', 'libtimidity.wasm.js'];
+    $scripts = ['timidity-player.js', 'libtimidity.wasm.js'];
 } elseif ($timidityPlayerRuntime === 'asmjs') {
     $scripts = ['timidity-player.js', 'libtimidity.js'];
 } else {

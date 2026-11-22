@@ -5,7 +5,7 @@ Module.onRuntimeInitialized = function () {
     Module.timidityReady = true;
 };
 
-// This must be defined *before* libtimidity.js is loaded and executed.
+// Define the shared Emscripten Module before loading either backend.
 Module.preRun = [() => {
     FS.mkdir('/gus-patch');
 }];
@@ -16,7 +16,8 @@ Module.printErr = function (text) {
 };
 
 /**
- * TimidityPlayer provides a high-level JavaScript interface to the libTiMidity WebAssembly module.
+ * TimidityPlayer provides a high-level JavaScript interface to the libTiMidity module,
+ * whether it is built as asm.js or WebAssembly.
  * It handles MIDI playback, real-time MIDI input, audio context management, and patch loading.
  */
 class TimidityPlayer {

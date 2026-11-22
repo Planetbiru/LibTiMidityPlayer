@@ -3804,8 +3804,8 @@
         }
 
     </script>
-    <!-- timidity-player.wasm.js must be included before libtimidity.wasm.js -->
-    <script src="timidity-player.wasm.js"></script>
+    <!-- Load the shared player wrapper before the selected libtimidity backend. -->
+    <script src="timidity-player.js"></script>
     <script src="libtimidity.wasm.js"></script>
 </body>
 
