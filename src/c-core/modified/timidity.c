@@ -600,6 +600,15 @@ static void do_song_load(MidIStream *stream, MidSongOptions *options, MidSong **
   if (!song->events)
     goto fail;
 
+  for (i = 0; i < song->groomed_event_count; i++)
+    if ((song->events[i].type == ME_REVERB ||
+         song->events[i].type == ME_CHORUS) &&
+        !mid_song_prepare_effects(song, song->events[i].channel))
+      {
+        song->oom = 1;
+        goto fail;
+      }
+
   song->default_instrument = NULL;
   song->default_program = DEFAULT_PROGRAM;
 
@@ -659,6 +668,7 @@ void mid_song_free(MidSong *song)
     timi_free(song->drumset[i]);
   }
 
+  mid_song_free_effects(song);
   timi_free(song->common_buffer);
   timi_free(song->resample_buffer);
   timi_free(song->events);

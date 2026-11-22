@@ -1397,6 +1397,11 @@
             font-size: 0.78rem;
         }
 
+        #effectsSupportNotice:not(:empty) {
+            margin: 8px 0;
+            color: #ffc96b;
+        }
+
         .equalizer-actions {
             display: flex;
             align-items: center;
@@ -1933,6 +1938,7 @@
                 </div>
             </div>
         </div>
+        <p class="equalizer-help" id="effectsSupportNotice" role="status" aria-live="polite"></p>
         <div id="mixer" class="mixer-container"></div>
     </div>
 
@@ -2441,8 +2447,19 @@
             const equalizerEnabled = document.getElementById('equalizerEnabled');
             const equalizerStorageKey = 'timidityPlayerGraphicEqualizerEnabled';
             const equalizerBandsStorageKey = 'timidityPlayerGraphicEqualizerBands';
+            const effectsSupportNotice = document.getElementById('effectsSupportNotice');
+            const reverbStorageKey = 'timidityPlayerReverbLevel';
+            const chorusStorageKey = 'timidityPlayerChorusLevel';
+            const channelEffectsStorageKey = 'timidityPlayerChannelEffects';
+            const savedChannelEffects = Array.from({ length: 16 }, () => ({ reverb: 0, chorus: 0 }));
+            const mixerEffectControls = { reverb: [], chorus: [] };
+            let channelEffectsReady = false;
             let savedEqualizerBands = null;
             let hasSavedEqualizerBands = false;
+            const normalizeEffectLevel = (value) => {
+                const level = Number(value);
+                return Number.isFinite(level) ? Math.max(0, Math.min(127, Math.round(level))) : 0;
+            };
             try {
                 equalizerEnabled.checked = window.localStorage.getItem(equalizerStorageKey) === 'true';
                 const storedBands = window.localStorage.getItem(equalizerBandsStorageKey);
@@ -2450,11 +2467,35 @@
                     savedEqualizerBands = JSON.parse(storedBands);
                     hasSavedEqualizerBands = true;
                 }
+                const storedEffects = window.localStorage.getItem(channelEffectsStorageKey);
+                if (storedEffects !== null) {
+                    const parsedEffects = JSON.parse(storedEffects);
+                    if (!Array.isArray(parsedEffects) || parsedEffects.length !== 16) {
+                        throw new TypeError('Stored channel effects must contain 16 channel settings.');
+                    }
+                    parsedEffects.forEach((effects, channel) => {
+                        if (effects && typeof effects === 'object') {
+                            savedChannelEffects[channel] = {
+                                reverb: normalizeEffectLevel(effects.reverb),
+                                chorus: normalizeEffectLevel(effects.chorus),
+                            };
+                        }
+                    });
+                } else {
+                    const oldReverb = window.localStorage.getItem(reverbStorageKey);
+                    const oldChorus = window.localStorage.getItem(chorusStorageKey);
+                    if (oldReverb !== null || oldChorus !== null) {
+                        const reverb = normalizeEffectLevel(oldReverb);
+                        const chorus = normalizeEffectLevel(oldChorus);
+                        for (let channel = 0; channel < 16; channel++) {
+                            savedChannelEffects[channel] = { reverb, chorus };
+                        }
+                    }
+                }
             } catch (error) {
-                statusEl.textContent = `Unable to load graphic equalizer preferences: ${error.message}`;
+                statusEl.textContent = `Unable to load audio preferences: ${error.message}`;
             }
-
-            player = new TimidityPlayer({ patchUrlBase: patchUrlBase, buffserSize: 512 });
+            player = new TimidityPlayer({ patchUrlBase: patchUrlBase, bufferSize: 512 });
             if (hasSavedEqualizerBands) {
                 try {
                     player.setGraphicEqualizerBands(savedEqualizerBands);
@@ -2467,8 +2508,41 @@
                 drumPadButtons.forEach((button) => {
                     button.disabled = false;
                 });
+                const effectsSupported = player.supportsNativeEffects();
+                let effectsReady = effectsSupported;
+                if (effectsSupported) {
+                    try {
+                        savedChannelEffects.forEach((effects, channel) => {
+                            player.setChannelEffects(channel, effects.reverb, effects.chorus);
+                        });
+                    } catch (error) {
+                        effectsReady = false;
+                        effectsSupportNotice.textContent = `Unable to configure channel effects: ${error.message}`;
+                    }
+                } else {
+                    effectsSupportNotice.textContent = 'Per-channel reverb and chorus require a rebuilt WASM module with the per-channel effects APIs.';
+                }
+                channelEffectsReady = effectsReady;
+                [...mixerEffectControls.reverb, ...mixerEffectControls.chorus]
+                    .forEach((control) => { control.disabled = !channelEffectsReady; });
             });
             player.init();
+
+            const saveChannelEffect = (channel, effect, level) => {
+                if (!channelEffectsReady) return;
+                try {
+                    const eventType = effect === 'reverb' ? player.ME_REVERB : player.ME_CHORUS;
+                    const normalizedLevel = player.sendEvent(eventType, channel, level);
+                    savedChannelEffects[channel] = {
+                        ...savedChannelEffects[channel],
+                        [effect]: normalizedLevel,
+                    };
+                    window.localStorage.setItem(channelEffectsStorageKey, JSON.stringify(savedChannelEffects));
+                    effectsSupportNotice.textContent = '';
+                } catch (error) {
+                    statusEl.textContent = `Unable to update reverb/chorus: ${error.message}`;
+                }
+            };
 
             const equalizerBandsContainer = document.getElementById('equalizerBands');
             const equalizerReset = document.getElementById('equalizerReset');
@@ -3173,6 +3247,16 @@
                         <div class="knob-label">EXP</div>
                         <input type="range" class="knob" id="ex-${i}" min="0" max="127" value="127">
                     </div>
+
+                    <div class="knob-track">
+                        <label class="knob-label" for="reverb-${i}">REV</label>
+                        <input type="range" class="knob mixer-effect" id="reverb-${i}" data-effect="reverb" min="0" max="127" value="${savedChannelEffects[i].reverb}" disabled aria-label="Channel ${i + 1} reverb send">
+                    </div>
+
+                    <div class="knob-track">
+                        <label class="knob-label" for="chorus-${i}">CHO</label>
+                        <input type="range" class="knob mixer-effect" id="chorus-${i}" data-effect="chorus" min="0" max="127" value="${savedChannelEffects[i].chorus}" disabled aria-label="Channel ${i + 1} chorus send">
+                    </div>
                     
                     <div class="mixer-channel-actions">
                         <button class="solo-btn" id="solo-btn-${i}">SOLO</button>
@@ -3193,6 +3277,17 @@
                 muteBtn.addEventListener('click', () => {
                     muteState[i] = muteBtn.classList.toggle('active');
                     updateMutesFromSolo();
+                });
+
+                mixerEffectControls.reverb[i] = document.getElementById(`reverb-${i}`);
+                mixerEffectControls.chorus[i] = document.getElementById(`chorus-${i}`);
+                mixerEffectControls.reverb[i].disabled = !channelEffectsReady;
+                mixerEffectControls.chorus[i].disabled = !channelEffectsReady;
+                mixerEffectControls.reverb[i].addEventListener('input', (e) => {
+                    saveChannelEffect(i, 'reverb', Number(e.target.value));
+                });
+                mixerEffectControls.chorus[i].addEventListener('input', (e) => {
+                    saveChannelEffect(i, 'chorus', Number(e.target.value));
                 });
 
                 document.getElementById(`vol-${i}`).addEventListener('input', (e) => {
@@ -3285,6 +3380,10 @@
                         if (exSlider) {
                             exSlider.value = event.a;
                         }
+                    } else if (event.eventType === player.ME_REVERB && mixerEffectControls.reverb[event.channel]) {
+                        mixerEffectControls.reverb[event.channel].value = event.a;
+                    } else if (event.eventType === player.ME_CHORUS && mixerEffectControls.chorus[event.channel]) {
+                        mixerEffectControls.chorus[event.channel].value = event.a;
                     }
                 }
 

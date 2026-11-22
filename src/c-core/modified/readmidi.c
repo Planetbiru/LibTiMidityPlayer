@@ -227,6 +227,8 @@ static MidEventList *read_midi_event(MidIStream *stream, MidSong *song)
 		  case 10: control=ME_PAN; break;
 		  case 11: control=ME_EXPRESSION; break;
 		  case 64: control=ME_SUSTAIN; b = (b >= 64); break;
+		  case 91: control=ME_REVERB; break;
+		  case 93: control=ME_CHORUS; break;
 		  case 120: control=ME_ALL_SOUNDS_OFF; break;
 		  case 121: control=ME_RESET_CONTROLLERS; break;
 		  case 123: control=ME_ALL_NOTES_OFF; break;

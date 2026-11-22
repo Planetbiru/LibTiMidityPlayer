@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "timidity.h"
 #include "timidity_internal.h"
@@ -81,14 +82,26 @@ static int find_free_voice(MidSong *song, MidEvent *e)
     return -1; /* No voice available */
 }
 
+static void clear_channel_effect_buffers(MidSong *song, int channel,
+                                         int clear_reverb, int clear_chorus);
+static sint32 effect_tail_limit(MidSong *song, int channel);
+static void refresh_effect_tail_remaining(MidSong *song);
+
 /* Process the Reset All Controllers event */
 static void reset_controllers(MidSong *song, int c)
 {
+  int clear_effects = song->channel[c].reverb_send || song->channel[c].chorus_send;
   song->channel[c].volume=90; /* Some standard says, although the SCC docs say 0. */
   song->channel[c].expression=127; /* SCC-1 does this. */
   song->channel[c].sustain=0;
   song->channel[c].pitchbend=0x2000;
   song->channel[c].pitchfactor=0; /* to be computed */
+  song->channel[c].reverb_send=0;
+  song->channel[c].chorus_send=0;
+  if (clear_effects)
+    clear_channel_effect_buffers(song, c, 1, 1);
+  song->channel_effect_tail_remaining[c] = 0;
+  refresh_effect_tail_remaining(song);
 }
 
 static void reset_midi(MidSong *song)
@@ -104,6 +117,362 @@ static void reset_midi(MidSong *song)
       song->channel[i].bank=0; /* tone bank or drum set */
     }
   reset_voices(song);
+}
+
+static void clear_channel_effect_buffers(MidSong *song, int channel,
+                                         int clear_reverb, int clear_chorus)
+{
+  int side, comb;
+  for (side = 0; side < 2; side++)
+    {
+      if (clear_reverb)
+        for (comb = 0; comb < MID_REVERB_COMB_COUNT; comb++)
+          {
+            if (song->reverb_buffer[channel][side][comb])
+              memset(song->reverb_buffer[channel][side][comb], 0,
+                     song->reverb_buffer_length[channel][comb] * sizeof(float));
+            song->reverb_buffer_position[channel][side][comb] = 0;
+          }
+      if (clear_chorus && song->chorus_buffer[channel][side] && song->chorus_buffer_length)
+        memset(song->chorus_buffer[channel][side], 0,
+               song->chorus_buffer_length * sizeof(float));
+    }
+  if (clear_chorus)
+    {
+      song->chorus_buffer_position[channel] = 0;
+      song->chorus_phase[channel] = 0.0;
+    }
+}
+
+static int ensure_effect_buffers(MidSong *song, int channel)
+{
+  static const float reverb_delay_seconds[MID_REVERB_COMB_COUNT] = {
+    0.0297f, 0.0371f, 0.0411f, 0.0437f
+  };
+  float *reverb_buffers[2][MID_REVERB_COMB_COUNT] = {{0}};
+  float *chorus_buffers[2] = {0, 0};
+  uint32 reverb_lengths[MID_REVERB_COMB_COUNT] = {0};
+  uint32 chorus_length = (uint32)(song->rate * 0.05f) + 4;
+  int side, comb;
+
+  if (channel < 0 || channel >= 16)
+    return 0;
+  if (song->effect_buffers_allocated[channel])
+    return 1;
+  if (!song->chorus_lfo_initialized)
+    {
+      const double two_pi = 6.28318530717958647692;
+      int i;
+      for (i = 0; i < MID_CHORUS_LFO_TABLE_SIZE; i++)
+        song->chorus_lfo_table[i] =
+          (float)sin(two_pi * i / MID_CHORUS_LFO_TABLE_SIZE);
+      song->chorus_lfo_initialized = 1;
+    }
+  if (!song->channel_buffer)
+    {
+      song->channel_buffer = (sint32 *)timi_calloc(song->buffer_size * 2, sizeof(sint32));
+      if (!song->channel_buffer)
+        return 0;
+    }
+
+  for (comb = 0; comb < MID_REVERB_COMB_COUNT; comb++)
+    reverb_lengths[comb] = (uint32)(song->rate * reverb_delay_seconds[comb]) + 1;
+  for (side = 0; side < 2; side++)
+    {
+      for (comb = 0; comb < MID_REVERB_COMB_COUNT; comb++)
+        {
+          reverb_buffers[side][comb] =
+            (float *)timi_calloc(reverb_lengths[comb], sizeof(float));
+          if (!reverb_buffers[side][comb])
+            goto fail;
+        }
+      chorus_buffers[side] = (float *)timi_calloc(chorus_length, sizeof(float));
+      if (!chorus_buffers[side])
+        goto fail;
+    }
+
+  for (side = 0; side < 2; side++)
+    {
+      for (comb = 0; comb < MID_REVERB_COMB_COUNT; comb++)
+        song->reverb_buffer[channel][side][comb] = reverb_buffers[side][comb];
+      song->chorus_buffer[channel][side] = chorus_buffers[side];
+    }
+  for (comb = 0; comb < MID_REVERB_COMB_COUNT; comb++)
+    song->reverb_buffer_length[channel][comb] = reverb_lengths[comb];
+  song->chorus_buffer_length = chorus_length;
+  song->effect_buffers_allocated[channel] = 1;
+  return 1;
+
+fail:
+  for (side = 0; side < 2; side++)
+    {
+      for (comb = 0; comb < MID_REVERB_COMB_COUNT; comb++)
+        timi_free(reverb_buffers[side][comb]);
+      timi_free(chorus_buffers[side]);
+    }
+  return 0;
+}
+
+int mid_song_prepare_effects(MidSong *song, int channel)
+{
+  return song && ensure_effect_buffers(song, channel);
+}
+
+void mid_song_free_effects(MidSong *song)
+{
+  int channel, side, comb;
+  if (!song)
+    return;
+
+  for (channel = 0; channel < 16; channel++)
+    {
+      for (side = 0; side < 2; side++)
+        {
+          for (comb = 0; comb < MID_REVERB_COMB_COUNT; comb++)
+            {
+              timi_free(song->reverb_buffer[channel][side][comb]);
+              song->reverb_buffer[channel][side][comb] = NULL;
+              song->reverb_buffer_position[channel][side][comb] = 0;
+            }
+          timi_free(song->chorus_buffer[channel][side]);
+          song->chorus_buffer[channel][side] = NULL;
+        }
+      song->effect_buffers_allocated[channel] = 0;
+      song->chorus_buffer_position[channel] = 0;
+      song->chorus_phase[channel] = 0.0;
+      song->channel_effect_tail_remaining[channel] = 0;
+    }
+  timi_free(song->channel_buffer);
+  song->channel_buffer = NULL;
+  song->chorus_buffer_length = 0;
+  song->effect_tail_remaining = 0;
+}
+
+static void reset_song_effects(MidSong *song)
+{
+  int channel;
+  for (channel = 0; channel < 16; channel++)
+    {
+      clear_channel_effect_buffers(song, channel, 1, 1);
+      song->channel_effect_tail_remaining[channel] = 0;
+    }
+  song->effect_tail_remaining = 0;
+}
+
+static sint32 effect_tail_limit(MidSong *song, int channel)
+{
+  if (channel < 0 || channel >= 16)
+    return 0;
+  if (song->channel[channel].reverb_send)
+    return song->rate * 2;
+  if (song->channel[channel].chorus_send)
+    return (sint32)(song->rate * 0.12f);
+  return 0;
+}
+
+static void refresh_effect_tail_remaining(MidSong *song)
+{
+  int channel;
+  song->effect_tail_remaining = 0;
+  for (channel = 0; channel < 16; channel++)
+    if (song->channel_effect_tail_remaining[channel] > song->effect_tail_remaining)
+      song->effect_tail_remaining = song->channel_effect_tail_remaining[channel];
+}
+
+int mid_song_set_channel_effects(MidSong *song, int channel, int reverb, int chorus)
+{
+  MidChannel *state;
+  int previous_reverb, previous_chorus;
+  sint32 tail_limit;
+  if (!song || channel < 0 || channel >= 16 ||
+      reverb < 0 || reverb > 127 || chorus < 0 || chorus > 127)
+    return 0;
+  if ((reverb || chorus) && !ensure_effect_buffers(song, channel))
+    return 0;
+
+  state = &song->channel[channel];
+  previous_reverb = state->reverb_send;
+  previous_chorus = state->chorus_send;
+  if (!reverb && previous_reverb)
+    clear_channel_effect_buffers(song, channel, 1, 0);
+  if (!chorus && previous_chorus)
+    clear_channel_effect_buffers(song, channel, 0, 1);
+  state->reverb_send = reverb;
+  state->chorus_send = chorus;
+
+  tail_limit = effect_tail_limit(song, channel);
+  if (!tail_limit || song->channel_effect_tail_remaining[channel] > tail_limit)
+    song->channel_effect_tail_remaining[channel] = tail_limit;
+  refresh_effect_tail_remaining(song);
+  return 1;
+}
+
+int mid_song_set_channel_reverb(MidSong *song, int channel, int reverb)
+{
+  if (!song || channel < 0 || channel >= 16)
+    return 0;
+  return mid_song_set_channel_effects(song, channel, reverb,
+                                     song->channel[channel].chorus_send);
+}
+
+int mid_song_set_channel_chorus(MidSong *song, int channel, int chorus)
+{
+  if (!song || channel < 0 || channel >= 16)
+    return 0;
+  return mid_song_set_channel_effects(song, channel,
+                                     song->channel[channel].reverb_send,
+                                     chorus);
+}
+
+int mid_song_set_effects(MidSong *song, int reverb, int chorus)
+{
+  int channel;
+  if (!song || reverb < 0 || reverb > 127 || chorus < 0 || chorus > 127)
+    return 0;
+  if (reverb || chorus)
+    for (channel = 0; channel < 16; channel++)
+      if (!ensure_effect_buffers(song, channel))
+        return 0;
+  for (channel = 0; channel < 16; channel++)
+    if (!mid_song_set_channel_effects(song, channel, reverb, chorus))
+      return 0;
+  return 1;
+}
+
+static float chorus_lfo_value(MidSong *song, int channel)
+{
+  const float two_pi = 6.28318530717958647692f;
+  float table_position = song->chorus_phase[channel] *
+                         (MID_CHORUS_LFO_TABLE_SIZE / two_pi);
+  uint32 index = (uint32)table_position;
+  uint32 next;
+  float fraction;
+  if (index >= MID_CHORUS_LFO_TABLE_SIZE)
+    {
+      index = 0;
+      table_position = 0.0;
+    }
+  next = (index + 1) & (MID_CHORUS_LFO_TABLE_SIZE - 1);
+  fraction = (float)(table_position - index);
+  return song->chorus_lfo_table[index] +
+         (song->chorus_lfo_table[next] - song->chorus_lfo_table[index]) * fraction;
+}
+
+static void process_song_effects(MidSong *song, int midi_channel,
+                                 sint32 *buffer, sint32 count, int channels)
+{
+  const float two_pi = 6.28318530717958647692f;
+  const float comb_feedback = 0.72f;
+  const float chorus_depth = song->rate * 0.008f;
+  const float chorus_base_delay = song->rate * 0.020f;
+  const float chorus_phase_increment = two_pi * 0.8f / song->rate;
+  MidChannel *state = &song->channel[midi_channel];
+  float chorus_gain = (float)state->chorus_send * (0.35f / 127.0f);
+  float reverb_gain = (float)state->reverb_send * (0.25f * 0.45f / 127.0f);
+  sint32 frame;
+  int side;
+
+  for (frame = 0; frame < count; frame++)
+    {
+      float output[2];
+      float chorus_modulation = chorus_gain
+        ? chorus_lfo_value(song, midi_channel)
+        : 0.0f;
+      for (side = 0; side < channels; side++)
+        {
+          float dry = (float)buffer[frame * channels + side];
+          float processed = dry;
+          if (state->chorus_send && song->chorus_buffer[midi_channel][side])
+            {
+              float delay = chorus_base_delay +
+                            chorus_depth * (side ? -chorus_modulation : chorus_modulation);
+              float read_position;
+              uint32 read_index_a, read_index_b;
+              float fraction, delayed;
+              uint32 length = song->chorus_buffer_length;
+              uint32 write_position = song->chorus_buffer_position[midi_channel];
+
+              song->chorus_buffer[midi_channel][side][write_position] = dry;
+              read_position = (float)write_position + length - delay;
+              if (read_position >= length)
+                read_position -= length;
+              read_index_a = (uint32)read_position;
+              read_index_b = read_index_a + 1;
+              if (read_index_b >= length)
+                read_index_b = 0;
+              fraction = (float)(read_position - read_index_a);
+              delayed = song->chorus_buffer[midi_channel][side][read_index_a] * (1.0f - fraction) +
+                        song->chorus_buffer[midi_channel][side][read_index_b] * fraction;
+              processed += delayed * chorus_gain;
+            }
+
+          if (state->reverb_send)
+            {
+              float reverb_sum = 0.0f;
+              uint32 position, length;
+              float delayed;
+
+              position = song->reverb_buffer_position[midi_channel][side][0];
+              length = song->reverb_buffer_length[midi_channel][0];
+              delayed = song->reverb_buffer[midi_channel][side][0][position];
+              song->reverb_buffer[midi_channel][side][0][position] =
+                processed + delayed * comb_feedback;
+              song->reverb_buffer_position[midi_channel][side][0] =
+                position + 1 >= length ? 0 : position + 1;
+              reverb_sum += delayed;
+
+              position = song->reverb_buffer_position[midi_channel][side][1];
+              length = song->reverb_buffer_length[midi_channel][1];
+              delayed = song->reverb_buffer[midi_channel][side][1][position];
+              song->reverb_buffer[midi_channel][side][1][position] =
+                processed + delayed * comb_feedback;
+              song->reverb_buffer_position[midi_channel][side][1] =
+                position + 1 >= length ? 0 : position + 1;
+              reverb_sum += delayed;
+
+              position = song->reverb_buffer_position[midi_channel][side][2];
+              length = song->reverb_buffer_length[midi_channel][2];
+              delayed = song->reverb_buffer[midi_channel][side][2][position];
+              song->reverb_buffer[midi_channel][side][2][position] =
+                processed + delayed * comb_feedback;
+              song->reverb_buffer_position[midi_channel][side][2] =
+                position + 1 >= length ? 0 : position + 1;
+              reverb_sum += delayed;
+
+              position = song->reverb_buffer_position[midi_channel][side][3];
+              length = song->reverb_buffer_length[midi_channel][3];
+              delayed = song->reverb_buffer[midi_channel][side][3][position];
+              song->reverb_buffer[midi_channel][side][3][position] =
+                processed + delayed * comb_feedback;
+              song->reverb_buffer_position[midi_channel][side][3] =
+                position + 1 >= length ? 0 : position + 1;
+              reverb_sum += delayed;
+
+              processed += reverb_sum * reverb_gain;
+            }
+          output[side] = processed;
+        }
+
+      for (side = 0; side < channels; side++)
+        {
+          double sample = output[side];
+          if (sample > 2147483647.0)
+            sample = 2147483647.0;
+          else if (sample < -2147483648.0)
+            sample = -2147483648.0;
+          buffer[frame * channels + side] = (sint32)sample;
+        }
+
+      if (state->chorus_send && song->chorus_buffer_length)
+        {
+          song->chorus_buffer_position[midi_channel]++;
+          if (song->chorus_buffer_position[midi_channel] >= song->chorus_buffer_length)
+            song->chorus_buffer_position[midi_channel] = 0;
+          song->chorus_phase[midi_channel] += chorus_phase_increment;
+          if (song->chorus_phase[midi_channel] >= two_pi)
+            song->chorus_phase[midi_channel] -= two_pi;
+        }
+    }
 }
 
 static void select_sample(MidSong *song, int v, MidInstrument *ip)
@@ -644,6 +1013,16 @@ static void seek_forward(MidSong *song, sint32 until_time)
 	    song->current_event->a;
 	  break;
 
+	case ME_REVERB:
+	  mid_song_set_channel_reverb(song, song->current_event->channel,
+	                              song->current_event->a);
+	  break;
+
+	case ME_CHORUS:
+	  mid_song_set_channel_chorus(song, song->current_event->channel,
+	                              song->current_event->a);
+	  break;
+
 	case ME_RESET_CONTROLLERS:
 	  reset_controllers(song, song->current_event->channel);
 	  break;
@@ -673,6 +1052,7 @@ static void skip_to(MidSong *song, sint32 until_time)
   reset_midi(song);
   song->current_event = song->events;
   song->events_finished = 0;
+  reset_song_effects(song);
 
   if (until_time)
     seek_forward(song, until_time);
@@ -681,12 +1061,76 @@ static void skip_to(MidSong *song, sint32 until_time)
 static void do_compute_data(MidSong *song, sint32 count)
 {
   int i;
+  int channel;
+  int any_effect_send = 0;
   int audio_channels = (song->encoding & PE_MONO) ? 1 : 2;
   memset(song->common_buffer, 0, count * audio_channels * 4);
-  for (i = 0; i < song->voices; i++)
+  for (channel = 0; channel < 16; channel++)
+    if (song->channel[channel].reverb_send || song->channel[channel].chorus_send)
+      any_effect_send = 1;
+
+  if (!any_effect_send)
     {
-      if(song->voice[i].status != VOICE_FREE)
-	mix_voice(song, song->common_buffer, i, count);
+      for (i = 0; i < song->voices; i++)
+        {
+          if(song->voice[i].status != VOICE_FREE)
+            mix_voice(song, song->common_buffer, i, count);
+        }
+    }
+  else
+    {
+      for (channel = 0; channel < 16; channel++)
+        {
+          if (!song->channel[channel].reverb_send &&
+              !song->channel[channel].chorus_send)
+            {
+              for (i = 0; i < song->voices; i++)
+                if (song->voice[i].status != VOICE_FREE &&
+                    song->voice[i].channel == channel)
+                  mix_voice(song, song->common_buffer, i, count);
+            }
+          else
+            {
+              int has_channel_voices = 0;
+              sint32 sample_count = count * audio_channels;
+              memset(song->channel_buffer, 0,
+                     sample_count * sizeof(sint32));
+              for (i = 0; i < song->voices; i++)
+                if (song->voice[i].status != VOICE_FREE &&
+                    song->voice[i].channel == channel)
+                  {
+                    has_channel_voices = 1;
+                    mix_voice(song, song->channel_buffer, i, count);
+                  }
+
+              if (has_channel_voices ||
+                  song->channel_effect_tail_remaining[channel] > 0)
+                {
+                  process_song_effects(song, channel, song->channel_buffer,
+                                       count, audio_channels);
+                  if (has_channel_voices)
+                    song->channel_effect_tail_remaining[channel] =
+                      effect_tail_limit(song, channel);
+                  else if (song->channel_effect_tail_remaining[channel] > 0)
+                    {
+                      song->channel_effect_tail_remaining[channel] -= count;
+                      if (song->channel_effect_tail_remaining[channel] < 0)
+                        song->channel_effect_tail_remaining[channel] = 0;
+                    }
+                  for (i = 0; i < sample_count; i++)
+                    song->common_buffer[i] += song->channel_buffer[i];
+                }
+            }
+        }
+      refresh_effect_tail_remaining(song);
+    }
+
+  if (!any_effect_send)
+    {
+      int c;
+      song->effect_tail_remaining = 0;
+      for (c = 0; c < 16; c++)
+        song->channel_effect_tail_remaining[c] = 0;
     }
     
   /* Master Peak Tracking */
@@ -786,7 +1230,8 @@ size_t mid_song_read_wave(MidSong *song, sint8 *ptr, size_t size, int skip_callb
   /* Once the event stream and all release tails are finished, no more audio
      needs to be produced. The final block is returned by the call that
      releases the last voice below. */
-  if (song->events_finished && mid_song_get_active_voices(song) == 0)
+  if (song->events_finished && mid_song_get_active_voices(song) == 0 &&
+      song->effect_tail_remaining == 0)
     {
       song->playing = 0;
       return 0;
@@ -890,6 +1335,16 @@ size_t mid_song_read_wave(MidSong *song, sint8 *ptr, size_t size, int skip_callb
 	    drop_sustain(song);
 	  break;
 
+	case ME_REVERB:
+	  mid_song_set_channel_reverb(song, song->current_event->channel,
+	                              song->current_event->a);
+	  break;
+
+	case ME_CHORUS:
+	  mid_song_set_channel_chorus(song, song->current_event->channel,
+	                              song->current_event->a);
+	  break;
+
 	case ME_RESET_CONTROLLERS:
 	  reset_controllers(song, song->current_event->channel);
 	  break;
@@ -927,7 +1382,8 @@ size_t mid_song_read_wave(MidSong *song, sint8 *ptr, size_t size, int skip_callb
     else
       compute_data(song, &ptr, song->current_event->time-song->current_sample);
   } while ( song->current_sample < end_sample );
-  if (song->events_finished && mid_song_get_active_voices(song) == 0)
+  if (song->events_finished && mid_song_get_active_voices(song) == 0 &&
+      song->effect_tail_remaining == 0)
     song->playing = 0;
 
   return (song->current_sample - start_sample) * song->bytes_per_sample;
@@ -1050,13 +1506,13 @@ int mid_song_get_master_peak(MidSong *song, int channel, int reset)
     return peak;
 }
 
-int mid_note_on(MidSong *song, int channel, int bank, int program, int note, int velocity, int pan, int bend, int modulation, int chorus, int sustain)
+int mid_note_on(MidSong *song, int channel, int bank, int program, int note, int velocity, int pan, int bend, int modulation, int sustain)
 {
   MidEvent e;
   MidInstrument *ip;
   int i;
 
-  if (!song || !song->playing) return -1;
+  if (!song || !song->playing || channel < 0 || channel >= 16) return -1;
   if (song->channel_mute & (1 << channel)) return -1;
 
   if (channel == 9) {
@@ -1174,6 +1630,14 @@ void mid_send_event(MidSong *song, int type, int channel, int a, int b)
         drop_sustain(song);
       break;
 
+    case ME_REVERB:
+      mid_song_set_channel_reverb(song, channel, a);
+      break;
+
+    case ME_CHORUS:
+      mid_song_set_channel_chorus(song, channel, a);
+      break;
+
     case ME_PROGRAM:
       if (ISDRUMCHANNEL(song, channel))
         song->channel[channel].bank = a;
@@ -1243,6 +1707,8 @@ sint32 mid_song_get_controller_value_at_tick(MidSong *song, int channel, int cc,
     temp_channel_state.volume = 90;
     temp_channel_state.expression = 127;
     temp_channel_state.sustain = 0;
+    temp_channel_state.reverb_send = 0;
+    temp_channel_state.chorus_send = 0;
     temp_channel_state.pitchbend = 0x2000;
     temp_channel_state.panning = 64; /* Center panning */
     /* We don't have dedicated fields for other CCs, so we can't track them yet.
@@ -1271,11 +1737,19 @@ sint32 mid_song_get_controller_value_at_tick(MidSong *song, int channel, int cc,
             case ME_SUSTAIN:
                 temp_channel_state.sustain = e->a;
                 break;
+            case ME_REVERB:
+                temp_channel_state.reverb_send = e->a;
+                break;
+            case ME_CHORUS:
+                temp_channel_state.chorus_send = e->a;
+                break;
             case ME_RESET_CONTROLLERS:
                 temp_channel_state.volume = 90;
                 temp_channel_state.expression = 127;
                 temp_channel_state.sustain = 0;
                 temp_channel_state.pitchbend = 0x2000;
+                temp_channel_state.reverb_send = 0;
+                temp_channel_state.chorus_send = 0;
                 break;
             /* Other events like modulation, reverb, etc. are not stored in MidChannel struct yet */
             }
@@ -1294,6 +1768,10 @@ sint32 mid_song_get_controller_value_at_tick(MidSong *song, int channel, int cc,
         return temp_channel_state.expression;
     case 64: /* Sustain Pedal */
         return temp_channel_state.sustain;
+    case 91: /* Reverb Send */
+        return temp_channel_state.reverb_send;
+    case 93: /* Chorus Send */
+        return temp_channel_state.chorus_send;
     case 256: /* Pitch Bend - Using a custom CC number for this special case */
         return temp_channel_state.pitchbend;
     default:

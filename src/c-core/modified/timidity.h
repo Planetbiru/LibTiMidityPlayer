@@ -249,6 +249,25 @@ extern "C" {
  */
   TIMI_EXPORT extern void mid_song_set_volume (MidSong *song, int volume);
 
+/* Set per-channel reverb and chorus sends (0-127). Returns nonzero on success.
+ */
+  TIMI_EXPORT extern int mid_song_set_channel_effects (MidSong *song,
+                                                        int channel,
+                                                        int reverb,
+                                                        int chorus);
+  TIMI_EXPORT extern int mid_song_set_channel_reverb (MidSong *song,
+                                                       int channel,
+                                                       int reverb);
+  TIMI_EXPORT extern int mid_song_set_channel_chorus (MidSong *song,
+                                                       int channel,
+                                                       int chorus);
+
+/* Set the same reverb and chorus sends on every channel (compatibility API).
+ */
+  TIMI_EXPORT extern int mid_song_set_effects (MidSong *song,
+                                                int reverb,
+                                                int chorus);
+
 /* Seek song to the start position and initialize conversion
  */
   TIMI_EXPORT extern void mid_song_start (MidSong *song);

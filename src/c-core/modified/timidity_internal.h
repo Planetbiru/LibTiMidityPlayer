@@ -132,6 +132,8 @@ extern sint32 XCHG_LONG (sint32);
 
 
 #define MID_VIBRATO_SAMPLE_INCREMENTS 32
+#define MID_REVERB_COMB_COUNT 4
+#define MID_CHORUS_LFO_TABLE_SIZE 256
 
 /* Maximum polyphony. */
 #define MID_MAX_VOICES	48
@@ -160,10 +162,9 @@ typedef struct _MidChannel MidChannel;
 struct _MidChannel
 {
   int bank, program, volume, sustain, panning, pitchbend, expression;
+  int reverb_send, chorus_send;
   int mono;	/* one note only on this channel -- not implemented yet */
   int pitchsens;
-  /* chorus, reverb... Coming soon to a 300-MHz, eight-way superscalar
-     processor near you */
   float pitchfactor; /* precomputed pitch bend factor to save some fdiv's */
 };
 
@@ -249,6 +250,7 @@ struct _MidSong
   int buffer_size;
   sample_t *resample_buffer;
   sint32 *common_buffer;
+  sint32 *channel_buffer;
   /* These would both fit into 32 bits, but they are often added in
      large multiples, so it's simpler to have two roomy ints */
   /* samples per MIDI delta-t */
@@ -279,6 +281,18 @@ struct _MidSong
   int current_track;
   sint32 division;
   sint32 total_ticks;
+  sint32 effect_tail_remaining;
+  sint32 channel_effect_tail_remaining[16];
+  uint8 effect_buffers_allocated[16];
+  float *reverb_buffer[16][2][MID_REVERB_COMB_COUNT];
+  uint32 reverb_buffer_length[16][MID_REVERB_COMB_COUNT];
+  uint32 reverb_buffer_position[16][2][MID_REVERB_COMB_COUNT];
+  float *chorus_buffer[16][2];
+  uint32 chorus_buffer_length;
+  uint32 chorus_buffer_position[16];
+  float chorus_phase[16];
+  uint8 chorus_lfo_initialized;
+  float chorus_lfo_table[MID_CHORUS_LFO_TABLE_SIZE];
 };
 
 /* The global callback, shared between modules */
