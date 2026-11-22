@@ -526,7 +526,7 @@
 
         .transport-toolbar {
             display: grid;
-            grid-template-columns: minmax(180px, auto) minmax(260px, 1fr) auto;
+            grid-template-columns: minmax(180px, auto) minmax(260px, 1fr) auto auto;
             align-items: center;
             gap: 14px;
             margin-top: 8px;
@@ -535,6 +535,7 @@
         }
 
         .transpose-control,
+        .master-volume-control,
         .time-controls {
             display: flex;
             align-items: center;
@@ -545,8 +546,33 @@
             margin-top: 0 !important;
         }
 
+        .master-volume-control input {
+            width: 110px;
+        }
+
+        #masterVolumeValue {
+            min-width: 42px;
+            color: var(--accent-color);
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
         .time-controls {
             justify-content: flex-end;
+        }
+
+        @media (max-width: 980px) {
+            .transport-toolbar {
+                grid-template-columns: minmax(0, 1fr) auto;
+            }
+
+            .seeker-container {
+                grid-column: 1 / -1;
+            }
+
+            .time-controls {
+                justify-content: flex-start;
+            }
         }
 
         .mixer-header {
@@ -1838,6 +1864,11 @@
                     <input type="range" id="transpose" min="-12" max="12" value="0" style="width: 100px;">
                     <span id="transposeValue">0</span>
                 </div>
+                <div class="master-volume-control">
+                    <label for="masterVolume">Volume:</label>
+                    <input type="range" id="masterVolume" min="0" max="100" value="100" aria-label="Master volume">
+                    <span id="masterVolumeValue">100%</span>
+                </div>
                 <div class="time-controls">
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <label style="font-size: 0.9em; color:#aaa;">Tick:</label>
@@ -1856,8 +1887,8 @@
         </div>
         <div class="status-bar">
             <div id="status">Waiting for initialization...</div>
-            <a class="patch-editor-link" href="https://composer.planetbiru.com/instrument-creator/" target="_blank" rel="noopener noreferrer">
-                Create Your Own <span aria-hidden="true">↗</span>
+            <a class="patch-editor-link" href="https://composer.planetbiru.com/" target="_blank" rel="noopener noreferrer">
+                Composer <span aria-hidden="true">↗</span>
             </a>
         </div>
     </div>
@@ -2207,6 +2238,14 @@
             const mixerSyncToggle = document.getElementById("mixerSyncToggle");
             const transposeEl = document.getElementById("transpose");
             const transposeValueEl = document.getElementById("transposeValue");
+            const masterVolumeEl = document.getElementById("masterVolume");
+            const masterVolumeValueEl = document.getElementById("masterVolumeValue");
+
+            masterVolumeEl.addEventListener('input', () => {
+                const volume = Number(masterVolumeEl.value);
+                masterVolumeValueEl.textContent = `${volume}%`;
+                if (player) player.setMasterVolume(volume / 100);
+            });
 
             // Modal Elements
             const infoModal = document.getElementById("infoModal");
@@ -2510,6 +2549,7 @@
             }
             player.setGraphicEqualizer(equalizerEnabled.checked);
             player.on('onInit', () => {
+                player.setMasterVolume(Number(masterVolumeEl.value) / 100);
                 drumPadButtons.forEach((button) => {
                     button.disabled = false;
                 });
