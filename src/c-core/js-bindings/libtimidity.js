@@ -7522,8 +7522,8 @@ function asmFunc(imports) {
   HEAP32[($5_1 + 124 | 0) >> 2] = $4_1;
   HEAPF32[($5_1 + 120 | 0) >> 2] = Math_fround(6.2831854820251465);
   HEAPF32[($5_1 + 116 | 0) >> 2] = Math_fround(.7200000286102295);
-  HEAPF32[($5_1 + 112 | 0) >> 2] = Math_fround(Math_fround(HEAP32[((HEAP32[($5_1 + 140 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0 | 0) * Math_fround(.00800000037997961));
-  HEAPF32[($5_1 + 108 | 0) >> 2] = Math_fround(Math_fround(HEAP32[((HEAP32[($5_1 + 140 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0 | 0) * Math_fround(.019999999552965164));
+  HEAPF32[($5_1 + 112 | 0) >> 2] = Math_fround(Math_fround(HEAP32[((HEAP32[($5_1 + 140 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0 | 0) * Math_fround(.004000000189989805));
+  HEAPF32[($5_1 + 108 | 0) >> 2] = Math_fround(Math_fround(HEAP32[((HEAP32[($5_1 + 140 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0 | 0) * Math_fround(.012000000104308128));
   HEAPF32[($5_1 + 104 | 0) >> 2] = Math_fround(Math_fround(5.026548385620117) / Math_fround(HEAP32[((HEAP32[($5_1 + 140 | 0) >> 2] | 0) + 8 | 0) >> 2] | 0 | 0));
   HEAP32[($5_1 + 100 | 0) >> 2] = ((HEAP32[($5_1 + 140 | 0) >> 2] | 0) + 1088 | 0) + Math_imul(HEAP32[($5_1 + 136 | 0) >> 2] | 0, 56) | 0;
   HEAPF32[($5_1 + 96 | 0) >> 2] = Math_fround(Math_fround(HEAP32[((HEAP32[($5_1 + 100 | 0) >> 2] | 0) + 32 | 0) >> 2] | 0 | 0) * Math_fround(2.7559055015444756e-03));

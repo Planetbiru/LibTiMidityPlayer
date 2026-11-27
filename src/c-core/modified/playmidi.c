@@ -473,8 +473,8 @@ static void process_song_effects(MidSong *song, int midi_channel,
 {
   const float two_pi = 6.28318530717958647692f;
   const float comb_feedback = 0.72f;
-  const float chorus_depth = song->rate * 0.008f;
-  const float chorus_base_delay = song->rate * 0.020f;
+  const float chorus_depth = song->rate * 0.004f;
+  const float chorus_base_delay = song->rate * 0.012f;
   const float chorus_phase_increment = two_pi * 0.8f / song->rate;
   MidChannel *state = &song->channel[midi_channel];
   float chorus_gain = (float)state->chorus_send * (0.35f / 127.0f);
