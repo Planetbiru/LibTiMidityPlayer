@@ -78,7 +78,7 @@ class TimidityPlayer {
         this.graphicEqualizerExternalOutput = null;
         this.reverbLevel = 0;
         this.chorusLevel = 0;
-        this.channelEffects = Array.from({ length: 16 }, () => ({ reverb: 0, chorus: 0, brightness: 0, bass: 0 }));
+        this.channelEffects = Array.from({ length: 16 }, () => ({ reverb: 0, chorus: 0, brightness: 0, bass: 0, resonance: 0 }));
         this.audioBufferPtr = 0;
         this.audioBufferCapacity = 0;
         this.songPtr = 0; // Pointer to the C MidSong object
@@ -119,6 +119,7 @@ class TimidityPlayer {
         this.ME_CHORUS              = 19;
         this.ME_BRIGHTNESS          = 20;
         this.ME_BASS                = 21;
+        this.ME_RESONANCE           = 22;
 
         // If the WebAssembly module has already finished initializing, set up the C bindings immediately.
         if (this.Module.timidityReady) {
@@ -235,6 +236,9 @@ class TimidityPlayer {
                 : null,
             setChannelBass: typeof this.Module._mid_song_set_channel_bass === 'function'
                 ? cwrap('mid_song_set_channel_bass', 'number', ['number', 'number', 'number'])
+                : null,
+            setChannelResonance: typeof this.Module._mid_song_set_channel_resonance === 'function'
+                ? cwrap('mid_song_set_channel_resonance', 'number', ['number', 'number', 'number'])
                 : null,
         };
 
@@ -508,6 +512,7 @@ class TimidityPlayer {
      *   chorusMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   brightnessMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   bassMap: Array<Array<{tick: number, channel: number, value: number}>>,
+     *   resonanceMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   bankMsbMap: Array<Array<{tick: number, channel: number, value: number}>>,
      *   bankLsbMap: Array<Array<{tick: number, channel: number, value: number}>>
      * }} Parsed timing, meter, track, and instrumentation metadata for the song.
@@ -525,6 +530,9 @@ class TimidityPlayer {
      *   - `expressionMap[ch]` — Expression (CC 11) events for channel `ch`, sorted by tick.
      *   - `reverbMap[ch]` — Reverb send (CC 91) events for channel `ch`, sorted by tick.
      *   - `chorusMap[ch]` — Chorus send (CC 93) events for channel `ch`, sorted by tick.
+     *   - `brightnessMap[ch]` — Brightness (CC 74) events for channel `ch`, sorted by tick.
+     *   - `bassMap[ch]` — Bass (CC 31) events for channel `ch`, sorted by tick.
+     *   - `resonanceMap[ch]` — Resonance (CC 71) events for channel `ch`, sorted by tick.
      *   - `bankMsbMap[ch]` — Bank Select MSB (CC 0) events for channel `ch`, sorted by tick.
      *   - `bankLsbMap[ch]` — Bank Select LSB (CC 32) events for channel `ch`, sorted by tick.
      * @throws {Error} If the data does not begin with a valid `MThd` header chunk.
@@ -561,6 +569,7 @@ class TimidityPlayer {
         const chorusEvents = [];
         const brightnessEvents = [];
         const bassEvents = [];
+        const resonanceEvents = [];
         const bankMsbEvents = [];
         const bankLsbEvents = [];
         let maxTick = 0;
@@ -637,6 +646,8 @@ class TimidityPlayer {
                                 brightnessEvents.push({ tick: absTick, channel: ch, value: d2 });
                             } else if (d1 === 31) {
                                 bassEvents.push({ tick: absTick, channel: ch, value: d2 });
+                            } else if (d1 === 71) {
+                                resonanceEvents.push({ tick: absTick, channel: ch, value: d2 });
                             } else if (d1 === 0) {
                                 bankMsbEvents.push({ tick: absTick, channel: ch, value: d2 });
                             } else if (d1 === 32) {
@@ -671,6 +682,7 @@ class TimidityPlayer {
         const chorusMap = buildChannelMap(chorusEvents);
         const brightnessMap = buildChannelMap(brightnessEvents);
         const bassMap = buildChannelMap(bassEvents);
+        const resonanceMap = buildChannelMap(resonanceEvents);
         const bankMsbMap = buildChannelMap(bankMsbEvents);
         const bankLsbMap = buildChannelMap(bankLsbEvents);
 
@@ -733,7 +745,7 @@ class TimidityPlayer {
         }
 
         return { division, timeMap, measureMap, tracksCount, trackNames, trackHasNotes, channelsUsed: Array.from(channelsUsed).sort((a, b) => a - b), maxTick, totalSeconds,
-            programMap, volumeMap, panMap, expressionMap, reverbMap, chorusMap, brightnessMap, bassMap, bankMsbMap, bankLsbMap
+            programMap, volumeMap, panMap, expressionMap, reverbMap, chorusMap, brightnessMap, bassMap, resonanceMap, bankMsbMap, bankLsbMap
         };
     }
 
@@ -1615,7 +1627,8 @@ class TimidityPlayer {
             reverb: nextReverb,
             chorus: nextChorus,
             brightness: this.channelEffects[channel].brightness ?? 0,
-            bass: this.channelEffects[channel].bass ?? 0
+            bass: this.channelEffects[channel].bass ?? 0,
+            resonance: this.channelEffects[channel].resonance ?? 0
         };
         return { ...this.channelEffects[channel] };
     }
@@ -1739,10 +1752,42 @@ class TimidityPlayer {
     }
 
     /**
-     * Gets the last explicitly configured reverb and chorus sends for a channel.
+     * Sets the resonant peak for one MIDI channel.
+     * @param {number} channel - MIDI channel from 0 to 15.
+     * @param {number} resonance - 0-127; 0 bypasses the filter and 127 applies the maximum peak.
+     * @returns {number} The normalized resonance value.
+     */
+    setChannelResonance(channel, resonance) {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RangeError('MIDI channel must be an integer from 0 to 15.');
+        }
+        if (!Number.isFinite(resonance)) {
+            throw new TypeError('Resonance must be a finite number.');
+        }
+        const normalizedResonance = Math.max(0, Math.min(127, Math.round(resonance)));
+        const songPointers = [this.songPtr, this.realtimeSongPtr].filter(Boolean);
+        if (this.c && !this.c.setChannelResonance) {
+            throw new Error('The loaded libTiMidity WASM build does not support per-channel resonance. Rebuild it with mid_song_set_channel_resonance.');
+        }
+        if (this.c && this.c.setChannelResonance) {
+            for (const songPtr of songPointers) {
+                if (!this.c.setChannelResonance(songPtr, channel, normalizedResonance)) {
+                    throw new Error(`Unable to configure resonance for MIDI channel ${channel + 1}.`);
+                }
+            }
+        }
+        this.channelEffects[channel] = {
+            ...this.channelEffects[channel],
+            resonance: normalizedResonance
+        };
+        return normalizedResonance;
+    }
+
+    /**
+     * Gets the last explicitly configured channel effects and tone controls.
      * MIDI-file automation is processed natively and does not change this saved configuration.
      * @param {number} channel - MIDI channel from 0 to 15.
-     * @returns {{reverb: number, chorus: number}}
+     * @returns {{reverb: number, chorus: number, brightness: number, bass: number, resonance: number}}
      */
     getChannelEffects(channel) {
         if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
@@ -1799,13 +1844,20 @@ class TimidityPlayer {
         return Boolean(this.c && this.c.setChannelBrightness && this.c.setChannelBass);
     }
 
+    /**
+     * Checks whether this runtime includes native per-channel resonance control.
+     * @returns {boolean}
+     */
+    supportsNativeResonance() {
+        return Boolean(this.c && this.c.setChannelResonance);
+    }
+
     _applyChannelEffectsToSong(songPtr) {
         if (!songPtr) return true;
         const configuredChannels = this.channelEffects
             .map((effects, channel) => ({ ...effects, channel }))
             .filter(effects => effects.reverb || effects.chorus);
-        if (!configuredChannels.length) return true;
-        if (!this.c || !this.c.setChannelEffects) {
+        if (configuredChannels.length && (!this.c || !this.c.setChannelEffects)) {
             throw new Error('The loaded libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
         }
         for (const effects of configuredChannels) {
@@ -1813,15 +1865,22 @@ class TimidityPlayer {
                 throw new Error(`Unable to configure effects for MIDI channel ${effects.channel + 1}.`);
             }
         }
-        for (const effects of this.channelEffects) {
-            const channel = this.channelEffects.indexOf(effects);
-            if (this.c.setChannelBrightness &&
+        for (let channel = 0; channel < this.channelEffects.length; channel++) {
+            const effects = this.channelEffects[channel];
+            if (this.c && this.c.setChannelBrightness &&
                 !this.c.setChannelBrightness(songPtr, channel, effects.brightness)) {
                 throw new Error(`Unable to configure brightness for MIDI channel ${channel + 1}.`);
             }
-            if (this.c.setChannelBass &&
+            if (this.c && this.c.setChannelBass &&
                 !this.c.setChannelBass(songPtr, channel, effects.bass)) {
                 throw new Error(`Unable to configure bass for MIDI channel ${channel + 1}.`);
+            }
+            if (effects.resonance && (!this.c || !this.c.setChannelResonance)) {
+                throw new Error('The loaded libTiMidity WASM build does not support per-channel resonance. Rebuild it with mid_song_set_channel_resonance.');
+            }
+            if (this.c && this.c.setChannelResonance &&
+                !this.c.setChannelResonance(songPtr, channel, effects.resonance)) {
+                throw new Error(`Unable to configure resonance for MIDI channel ${channel + 1}.`);
             }
         }
         return true;
@@ -1959,6 +2018,16 @@ class TimidityPlayer {
                 channelEvents.some(event => event.value > 0)
             )
         );
+        const hasConfiguredResonance = this.channelEffects.some(effects => effects.resonance > 0);
+        const hasMidiResonanceAutomation = this.tempoMap?.resonanceMap?.some(channelEvents =>
+            channelEvents.some(event => event.value > 0)
+        );
+        if ((hasConfiguredResonance || hasMidiResonanceAutomation) &&
+            !this.supportsNativeResonance()) {
+            const error = new Error('This libTiMidity WASM build does not support per-channel resonance. Rebuild it with mid_song_set_channel_resonance.');
+            this.emit('onError', error.message);
+            return Promise.reject(error);
+        }
         if ((hasConfiguredEffects || hasMidiEffectAutomation) && !this.supportsNativeEffects()) {
             const error = new Error('This libTiMidity WASM build does not support per-channel reverb and chorus. Rebuild it with mid_song_set_channel_effects.');
             this.emit('onError', error.message);
@@ -2365,7 +2434,8 @@ class TimidityPlayer {
         if (this.songPtr !== 0) {
             this.emit('onSeek', this.c.getCurrentTick(this.songPtr), timeInSeconds);
             this.c.seekSong(this.songPtr, timeInSeconds * 1000);
-            if (this.channelEffects.some(effects => effects.reverb || effects.chorus)) {
+            if (this.channelEffects.some(effects =>
+                effects.reverb || effects.chorus || effects.brightness || effects.bass || effects.resonance)) {
                 const targetTick = this.timeToTick(timeInSeconds);
                 for (let channel = 0; channel < 16; channel++) {
                     const configured = this.channelEffects[channel];
@@ -2373,11 +2443,26 @@ class TimidityPlayer {
                         ?.some(event => event.tick < targetTick);
                     const chorusAutomated = this.tempoMap?.chorusMap?.[channel]
                         ?.some(event => event.tick < targetTick);
+                    const brightnessAutomated = this.tempoMap?.brightnessMap?.[channel]
+                        ?.some(event => event.tick < targetTick);
+                    const bassAutomated = this.tempoMap?.bassMap?.[channel]
+                        ?.some(event => event.tick < targetTick);
+                    const resonanceAutomated = this.tempoMap?.resonanceMap?.[channel]
+                        ?.some(event => event.tick < targetTick);
                     if (configured.reverb && !reverbAutomated) {
                         this.setChannelReverbLevel(channel, configured.reverb);
                     }
                     if (configured.chorus && !chorusAutomated) {
                         this.setChannelChorusLevel(channel, configured.chorus);
+                    }
+                    if (configured.brightness && !brightnessAutomated) {
+                        this.setChannelBrightness(channel, configured.brightness);
+                    }
+                    if (configured.bass && !bassAutomated) {
+                        this.setChannelBass(channel, configured.bass);
+                    }
+                    if (configured.resonance && !resonanceAutomated) {
+                        this.setChannelResonance(channel, configured.resonance);
                     }
                 }
             }
@@ -2599,6 +2684,9 @@ class TimidityPlayer {
         if (eventType === this.ME_BASS) {
             return this.setChannelBass(channel, a);
         }
+        if (eventType === this.ME_RESONANCE) {
+            return this.setChannelResonance(channel, a);
+        }
 
         if (eventType === this.ME_TONE_BANK && channel === 9) {
             const previousLoad = this.pendingDrumKitLoad || Promise.resolve();
@@ -2686,6 +2774,8 @@ class TimidityPlayer {
                     player.sendEvent(player.ME_BRIGHTNESS, channel, val);
                 } else if (cc === 31) { // Bass boost
                     player.sendEvent(player.ME_BASS, channel, val);
+                } else if (cc === 71) { // Resonance
+                    player.sendEvent(player.ME_RESONANCE, channel, val);
                 }
                 break;
         }

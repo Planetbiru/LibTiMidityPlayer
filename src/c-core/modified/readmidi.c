@@ -231,6 +231,7 @@ static MidEventList *read_midi_event(MidIStream *stream, MidSong *song)
 		  case 93: control=ME_CHORUS; break;
 		  case 74: control=ME_BRIGHTNESS; break;
 		  case 31: control=ME_BASS; break;
+		  case 71: control=ME_RESONANCE; break;
 		  case 120: control=ME_ALL_SOUNDS_OFF; break;
 		  case 121: control=ME_RESET_CONTROLLERS; break;
 		  case 123: control=ME_ALL_NOTES_OFF; break;

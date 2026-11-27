@@ -273,6 +273,10 @@ extern "C" {
   TIMI_EXPORT extern int mid_song_set_channel_bass (MidSong *song,
                                                      int channel,
                                                      int bass);
+/* Set per-channel resonance (MIDI CC71) from 0 to 127. 0 bypasses the filter. */
+  TIMI_EXPORT extern int mid_song_set_channel_resonance (MidSong *song,
+                                                          int channel,
+                                                          int resonance);
 
 /* Set the same reverb and chorus sends on every channel (compatibility API).
  */

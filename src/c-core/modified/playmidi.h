@@ -55,6 +55,7 @@
 #define ME_CHORUS	19
 #define ME_BRIGHTNESS	20
 #define ME_BASS	21
+#define ME_RESONANCE	22
 
 #define ME_EOT		99
 
@@ -86,6 +87,7 @@ extern int mid_song_set_channel_reverb(MidSong *song, int channel, int reverb);
 extern int mid_song_set_channel_chorus(MidSong *song, int channel, int chorus);
 extern int mid_song_set_channel_brightness(MidSong *song, int channel, int brightness);
 extern int mid_song_set_channel_bass(MidSong *song, int channel, int bass);
+extern int mid_song_set_channel_resonance(MidSong *song, int channel, int resonance);
 extern int mid_song_prepare_effects(MidSong *song, int channel);
 extern int mid_song_set_effects(MidSong *song, int reverb, int chorus);
 extern void mid_song_free_effects(MidSong *song);

@@ -461,8 +461,8 @@ player.setGraphicEqualizerOutputNode(null); // Restore internal routing
 
 Gain is clamped to -12..+12 dB. Offline rendering uses the current equalizer configuration; disabling it preserves the existing unfiltered render path.
 
-### Per-channel reverb and chorus
-Reverb and chorus are per-channel MIDI sends, not master-bus effects. MIDI CC91 controls reverb and CC93 controls chorus. The C core applies those controller events during playback and offline rendering. Rebuild the WASM module with the exported per-channel APIs `mid_song_set_channel_effects`, `mid_song_set_channel_reverb`, and `mid_song_set_channel_chorus`.
+### Per-channel effects and tone controls
+Reverb and chorus are per-channel MIDI sends, not master-bus effects. MIDI CC91 controls reverb and CC93 controls chorus. CC71 resonance and CC74/CC31 tone controls are also processed per channel. The C core applies these controller events during playback and offline rendering. Rebuild the WASM module with the exported per-channel APIs, including `mid_song_set_channel_resonance`.
 
 ```javascript
 player.setChannelEffects(0, 48, 32); // Channel 1: reverb 48, chorus 32
@@ -470,29 +470,33 @@ player.setChannelReverbLevel(0, 64);
 player.setChannelChorusLevel(0, 48);
 player.setChannelBrightness(0, 96); // CC74: add treble
 player.setChannelBass(0, 96);       // CC31: add bass
+player.setChannelResonance(0, 96);  // CC71: add a resonant peak
 
-const effects = player.getChannelEffects(0); // { reverb: 64, chorus: 48 }
+const effects = player.getChannelEffects(0); // includes reverb, chorus, brightness, bass, resonance
 const canUseNativeEffects = player.supportsNativeEffects();
+const canUseNativeResonance = player.supportsNativeResonance();
 
 // Update a channel immediately during playback without reloading the MIDI file.
 player.sendEvent(player.ME_REVERB, 0, 96);
 player.sendEvent(player.ME_CHORUS, 0, 24);
 player.sendEvent(player.ME_BRIGHTNESS, 0, 96);
 player.sendEvent(player.ME_BASS, 0, 96); // ME_BASS is an internal event ID, not CC31
+player.sendEvent(player.ME_RESONANCE, 0, 96); // ME_RESONANCE is an internal event ID, not CC71
 ```
 
 - `setChannelEffects(channel, reverb, chorus)` updates either or both sends for one MIDI channel (0–15). An omitted level remains unchanged; provided levels are rounded and clamped to `0..127`.
 - `setChannelReverbLevel(channel, level)` and `setChannelChorusLevel(channel, level)` update one send for a channel.
 - `setChannelBrightness(channel, value)` applies per-channel treble. Value `0` adds no treble and `127` adds maximum treble. MIDI CC74 maps to brightness.
 - `setChannelBass(channel, value)` applies per-channel low-frequency boost. Value `0` adds no bass and `127` adds maximum bass. MIDI CC31 maps to the internal `ME_BASS` event (ID `21`); the controller number and internal event ID are separate values.
-- MIDI CC74/CC31 events in a file update these controls during realtime playback and offline rendering. `sendEvent(ME_BRIGHTNESS, channel, value)` and `sendEvent(ME_BASS, channel, value)` apply them immediately.
+- `setChannelResonance(channel, value)` applies per-channel resonant emphasis. Value `0` bypasses the filter; higher values increase a peak centered near 1.2 kHz (up to 9 dB). MIDI CC71 maps to resonance.
+- MIDI CC74/CC31/CC71 events in a file update these controls during realtime playback and offline rendering. `sendEvent(ME_BRIGHTNESS, channel, value)`, `sendEvent(ME_BASS, channel, value)`, and `sendEvent(ME_RESONANCE, channel, value)` apply them immediately.
 - `getChannelEffects(channel)` returns a copy of the last explicitly configured levels for that channel. MIDI-file automation is processed in the C core and does not change this saved JavaScript configuration.
 - `sendEvent(ME_REVERB, channel, value)` and `sendEvent(ME_CHORUS, channel, value)` provide immediate channel-specific updates suitable for DAW automation and live MIDI input.
-- `sendMessage()` also routes incoming MIDI CC74, CC31, CC91, and CC93 directly to the selected channel while playback continues.
+- `sendMessage()` also routes incoming MIDI CC71, CC74, CC31, CC91, and CC93 directly to the selected channel while playback continues.
 - `setEffects(reverb, chorus)` and the corresponding `setReverbLevel()` / `setChorusLevel()` methods remain as compatibility helpers that apply the same send levels to all 16 channels.
-- `supportsNativeEffects()` reports whether the loaded WASM runtime exports the per-channel C-core APIs, including the independent reverb and chorus setters.
+- `supportsNativeEffects()` reports support for the existing per-channel reverb, chorus, brightness, and bass APIs. `supportsNativeResonance()` specifically checks for CC71 support.
 
-MIDI CC74/CC31/CC91/CC93 events in a file are honored by both realtime playback and offline rendering. Per-channel DSP runs before channel signals are summed into the output mix; the native renderer includes the effect tail in its PCM output.
+MIDI CC71/CC74/CC31/CC91/CC93 events in a file are honored by both realtime playback and offline rendering. Per-channel DSP runs before channel signals are summed into the output mix; the native renderer includes the effect tail in its PCM output.
 
 ### `setTranspose(semitones)`
 Sets the global pitch transpose.
@@ -590,6 +594,7 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
       chorusMap: Array<Array<{ tick, channel, value }>>,        // CC 93
       brightnessMap: Array<Array<{ tick, channel, value }>>,     // CC 74
       bassMap: Array<Array<{ tick, channel, value }>>,           // CC 31
+      resonanceMap: Array<Array<{ tick, channel, value }>>,      // CC 71
       bankMsbMap: Array<Array<{ tick, channel, value }>>,       // CC 0  (Bank Select MSB)
       bankLsbMap: Array<Array<{ tick, channel, value }>>        // CC 32 (Bank Select LSB)
   }
@@ -597,7 +602,7 @@ Gets the parsed tempo map of the currently loaded MIDI song. In addition to the 
 - **Notes:**
   - `channelsUsed` is a sorted, duplicate-free array of MIDI channel numbers (0–15). It includes a channel if the MIDI file contains any channel voice event (status 0x8–0xE) on that channel, not only note events. For example, `[0, 9]` means the file uses channels 1 and 10; MIDI channel 10 is index `9`.
   - The map is available after MIDI parsing. For example, read `player.getTempoMap()?.channelsUsed` in an `onMidiLoaded` listener to determine which mixer strips correspond to channels present in the file.
-  - `programMap`, `volumeMap`, `panMap`, `expressionMap`, `reverbMap`, `chorusMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending.
+  - `programMap`, `volumeMap`, `panMap`, `expressionMap`, `reverbMap`, `chorusMap`, `brightnessMap`, `bassMap`, `resonanceMap`, `bankMsbMap`, and `bankLsbMap` are arrays of 16 inner arrays (one per MIDI channel), each sorted by `tick` ascending.
   - If the MIDI file does not contain events for a map on a channel, that map's corresponding inner array is empty.
 
 ### `tickToBeat(tick)`
@@ -640,7 +645,7 @@ Checks if a specific MIDI tick aligns exactly with a metronome click.
 - **Returns:** `number` - The number of currently active polyphony voices.
 
 ### `getControllerValueAtTick(channel, cc, tick)`
-- **Returns:** `number` - The controller value (0-127) at the exact tick position. CC74 (brightness), CC31 (bass), CC91 (reverb send), and CC93 (chorus send) are supported.
+- **Returns:** `number` - The controller value (0-127) at the exact tick position. CC71 (resonance), CC74 (brightness), CC31 (bass), CC91 (reverb send), and CC93 (chorus send) are supported.
 
 ### `getVolume(channel, tick)`
 Gets the channel volume (CC 7) at the given tick.
