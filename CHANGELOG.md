@@ -39,6 +39,7 @@ The changes in this release were specifically made to meet the requirements for 
 - Added `mid_song_update_events` to allow for hot-swapping the MIDI event list of a currently playing song without interrupting playback. This is crucial for DAWs where users can edit MIDI data in real-time.
 - Added per-channel **Reverb (MIDI CC 91)** and **Chorus (MIDI CC 93)** sends. Each effect can be controlled independently through MIDI automation, real-time events, and offline rendering; channel DSP is applied before the master mix.
 - Added `mid_song_set_channel_effects`, `mid_song_set_channel_reverb`, and `mid_song_set_channel_chorus` for combined or independent channel-send updates.
+- Added per-channel resonance (`MIDI CC71`) to the C core, live MIDI input, offline rendering, and JavaScript APIs.
 - Added **Event Callback** hook (`mid_song_set_event_callback`) to forward specific MIDI events (Note On/Off, Control Changes, lyric changes, tempo, meta-events) back to the JavaScript layer during the audio rendering loop.
 - Added **Debug Callback** hook (`mid_set_debug_msg_callback`) and `timi_debug_msg` in `common.c` to bridge internal libTiMidity debug output to the web browser console instead of `stderr`.
 
@@ -46,6 +47,7 @@ The changes in this release were specifically made to meet the requirements for 
 - Exposed all newly added C functions (`mid_song_create`, `mid_note_on`, `mid_song_set_transpose`, `mid_song_set_channel_mute`, `mid_song_set_track_mute`, `mid_song_panic`, `mid_song_get_info_json`, etc.) via Emscripten `cwrap`.
 - Added the `sendEvent()` method to forward DAW slider/control interactions simultaneously to `songPtr` (main song) and `realtimeSongPtr` (real-time synth).
 - Added `setChannelEffects()`, `setChannelReverbLevel()`, `setChannelChorusLevel()`, and `getChannelEffects()` for independent per-channel effect sends. MIDI CC91/CC93 and live DAW events update the selected channel without reloading the song.
+- Added `setChannelResonance()` and `ME_RESONANCE` for direct JavaScript control of per-channel MIDI CC71 resonance.
 - Added `setTranspose(semitones)` method to globally adjust the pitch of the playback using the new C API.
 - Added `setChannelMute(channel, mute)` method to toggle the mute state of any MIDI channel.
 - Added `setTrackMute(track, mute)` method to toggle the mute state of any MIDI track.
