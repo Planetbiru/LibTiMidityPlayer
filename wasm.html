@@ -2111,6 +2111,15 @@
             return Number.isFinite(currentTick) && currentTick >= 0 ? currentTick : 0;
         }
 
+        function restoreControlChangesAtCurrentTick() {
+            if (!player || player.songPtr === 0) return;
+            const time = player.tickToTime(getCurrentSongTick());
+            if (!Number.isFinite(time) || time < 0) {
+                throw new Error('Unable to restore MIDI controls at the current tick.');
+            }
+            player.seek(time);
+        }
+
         function updateControllerMapAtCurrentTick(channel, controllerNumber, value) {
             const mapName = controllerMapNames[controllerNumber];
             const controllerMap = player && player.tempoMap && player.tempoMap[mapName];
@@ -2451,8 +2460,18 @@
             function updateMutesFromSolo() {
                 const anySolo = soloState.some(s => s);
                 for (let i = 0; i < 16; i++) {
-                    const shouldMute = anySolo ? !soloState[i] : muteState[i];
+                    const shouldMute = muteState[i] || (anySolo && !soloState[i]);
                     if (player) player.setChannelMute(i, shouldMute);
+                }
+            }
+
+            function resetAllChannelMuteStates() {
+                for (let channel = 0; channel < 16; channel++) {
+                    soloState[channel] = false;
+                    muteState[channel] = false;
+                    document.getElementById(`solo-btn-${channel}`).classList.remove('active');
+                    document.getElementById(`mute-btn-${channel}`).classList.remove('active');
+                    if (player) player.setChannelMute(channel, false);
                 }
             }
 
@@ -2719,6 +2738,8 @@
 
             player.on('onMidiLoaded', (midi) => {
                 channelInstrumentRevision++;
+                restoreControlChangesAtCurrentTick();
+                resetAllChannelMuteStates();
                 statusEl.textContent = `Loaded: ${midi.name || 'MIDI File'}`;
                 lyricEvents = parseMidiLyricEvents(player.lastMidiData || midi);
                 updateLyricForTick(0);
@@ -2916,6 +2937,7 @@
 
             player.on('onEnded', () => {
                 statusEl.textContent = "Playback finished.";
+                resetAllChannelMuteStates();
             });
 
             player.on('onShutdown', () => {
@@ -3564,6 +3586,8 @@
                     const f = midiFileEl.files[0];
                     player.loadAndPlay(f);
                 } else {
+                    restoreControlChangesAtCurrentTick();
+                    resetAllChannelMuteStates();
                     player.resume();
                 }
             };
@@ -3605,7 +3629,7 @@
                 seekerEl.disabled = false;
             };
 
-            stopBtn.onclick = () => player.stop();
+            stopBtn.onclick = () => player.stop(true);
             // Test Note On/Off buttons are removed from UI in DAW mode, but you could re-add them if needed.
             // noteOnBtn.onclick = () => player.noteOn(5, 30, 60, 127, { bank: 0 });
             // noteOffBtn.onclick = () => player.noteOff(5, 60);

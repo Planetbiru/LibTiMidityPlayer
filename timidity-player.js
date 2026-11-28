@@ -82,6 +82,10 @@ class TimidityPlayer {
         this.audioBufferPtr = 0;
         this.audioBufferCapacity = 0;
         this.songPtr = 0; // Pointer to the C MidSong object
+        this.realtimeSongPtr = 0;
+        this.eventCallbackPtr = 0;
+        this.resetEngineBeforeNextLoad = false;
+        this.isShuttingDown = false;
         this.loadedPatches = new Map(); // Map of filename -> Promise
         this.loadedPatchFiles = new Set();
         this.eventListeners = {}; // Event listeners for player events
@@ -878,7 +882,7 @@ class TimidityPlayer {
                                     outR[i] = pcmSamples[sampleOffset + (i * 2) + 1] / 32768.0;
                                 }
                             } else {
-                                this.stop();
+                                this.stop(true);
                                 this.emit('onEnded');
                             }
                         }
@@ -903,8 +907,10 @@ class TimidityPlayer {
                 // Preload the default instrument (Acoustic Grand Piano) for the real-time player.
                 // This ensures that the debug buttons and initial MIDI controller input work immediately.
                 return this.setRealtimeInstrument(0, 0, 0).then(() => {
-                    const callbackPtr = this.Module.addFunction((...args) => this._handleMidiEvent(...args), 'viiiiiiii');
-                    this.c.setEventCallback(0, callbackPtr);
+                    if (!this.eventCallbackPtr) {
+                        this.eventCallbackPtr = this.Module.addFunction((...args) => this._handleMidiEvent(...args), 'viiiiiiii');
+                    }
+                    this.c.setEventCallback(0, this.eventCallbackPtr);
                     this.emit('onInit');
                     return true;
                 });
@@ -1069,6 +1075,9 @@ class TimidityPlayer {
             this.emit('onError', "Player not initialized. Call init() first.");
             if (callback) callback(false);
             return Promise.resolve(false);
+        }
+        if (this.resetEngineBeforeNextLoad) {
+            await this._resetEngineForReplay();
         }
         if (this.songPtr !== 0) {
             this.stop();
@@ -2374,9 +2383,14 @@ class TimidityPlayer {
     }
 
     /**
-     * Stops the playback, frees the loaded song from memory, and resets the player state.
+     * Stops the playback, frees the loaded song, and optionally schedules a full engine
+     * reset before the next load.
+     * @param {boolean} [resetBeforeNextLoad=false] - Reinitialize the engine before loading again.
      */
-    stop() {
+    stop(resetBeforeNextLoad = false) {
+        if (resetBeforeNextLoad) {
+            this.resetEngineBeforeNextLoad = true;
+        }
         if (this.songPtr !== 0) {
             if (this.playingInterval) {
                 cancelAnimationFrame(this.playingInterval);
@@ -2404,25 +2418,56 @@ class TimidityPlayer {
             // After stopping a song, the real-time synth might also be affected if it shares resources.
             // We re-initialize it to ensure it's ready for the next input, which is crucial
             // for keeping a MIDI controller responsive.
-            this.initRealtimeSong();
+            if (!this.isShuttingDown) {
+                this.initRealtimeSong();
+            }
         }
     }
 
     /**
      * Completely shuts down the player, stops playback, and releases the WebAudio context.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    shutdown() {
-        this.stop();
+    async shutdown() {
+        this.isShuttingDown = true;
+        try {
+            this.stop();
+        } finally {
+            this.isShuttingDown = false;
+        }
+        this.resetEngineBeforeNextLoad = false;
+        if (this.realtimeSongPtr) {
+            this.c.freeSong(this.realtimeSongPtr);
+            this.realtimeSongPtr = 0;
+        }
         if (this.audioBufferPtr) {
             this.Module._free(this.audioBufferPtr);
             this.audioBufferPtr = 0;
             this.audioBufferCapacity = 0;
         }
+        if (this.scriptNode) {
+            this.scriptNode.disconnect();
+            this.scriptNode = null;
+        }
         this.c.exit(); // Shutdown libTiMidity
         if (this.audioContext) {
-            this.audioContext.close();
+            const audioContext = this.audioContext;
             this.audioContext = null;
+            await audioContext.close();
+        }
+        this.gainNode = null;
+        this.graphicEqualizerFilters = [];
+        this.graphicEqualizerInput = null;
+        this.graphicEqualizerOutput = null;
+    }
+
+    async _resetEngineForReplay() {
+        this.resetEngineBeforeNextLoad = false;
+        await this.shutdown();
+        const initialized = await this.init();
+        if (!initialized) {
+            this.resetEngineBeforeNextLoad = true;
+            throw new Error('Unable to reinitialize the player before replay.');
         }
     }
 
