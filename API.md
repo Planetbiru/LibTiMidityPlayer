@@ -342,6 +342,7 @@ Initializes the WebAudio context and the libTiMidity engine. Must be called befo
 
 ### `shutdown()`
 Completely shuts down the player, stops playback, frees memory, and closes the WebAudio context.
+- **Returns:** `Promise<void>` - Resolves after the WebAudio context is closed.
 
 ---
 
@@ -393,8 +394,8 @@ Convenience method to sequentially call `load()` and `play()`. The `options` obj
 await player.loadAndPlay(midiFile, 0, { volume: 70 });
 ```
 
-### `pause()` / `resume()` / `stop()`
-Controls the playback state. `stop()` will also free the currently loaded song from memory.
+### `pause()` / `resume()` / `stop(resetBeforeNextLoad = false)`
+Controls the playback state. `stop()` also frees the loaded song. Pass `true` to schedule a complete engine and WebAudio reset before the next `load()`. Natural song completion schedules the same reset automatically.
 
 ### `updateMidiData(midi)`
 Updates the currently playing MIDI data on-the-fly without stopping playback. The player will seamlessly transition to the new event list from its current time.
@@ -402,8 +403,8 @@ Updates the currently playing MIDI data on-the-fly without stopping playback. Th
   - `midi` *(File | Uint8Array)*: The new MIDI file data to load.
 - **Returns:** `Promise<boolean>` - `true` if the update was successful.
 
-### `pause()` / `resume()` / `stop()`
-Controls the playback state. `stop()` will also free the currently loaded song from memory.
+### `pause()` / `resume()` / `stop(resetBeforeNextLoad = false)`
+Controls the playback state. `stop()` also frees the loaded song. Pass `true` to schedule a complete engine and WebAudio reset before the next `load()`. Natural song completion schedules the same reset automatically.
 
 ### `seek(timeInSeconds)`
 Seeks to a specific time position within the currently loaded MIDI song.
